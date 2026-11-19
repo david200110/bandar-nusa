@@ -1,25 +1,22 @@
-// Seeded randomness (mulberry32). A ?seed= in the URL rebuilds the same
-// city, the same traffic and the same pedestrians, so a shared seed always
-// shows the same Bandar Nusa — including the screenshot scenes.
+// Seeded random numbers (mulberry32) so ?seed=N rebuilds the same city.
 export function createRandom(seed) {
-  let state = seed >>> 0;
-  return function random() {
-    state |= 0;
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  let a = seed >>> 0;
+  return {
+    next() {
+      a |= 0;
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
+    range(min, max) {
+      return min + this.next() * (max - min);
+    },
+    int(min, max) {
+      return Math.floor(this.range(min, max + 1));
+    },
+    pick(list) {
+      return list[Math.floor(this.next() * list.length)];
+    },
   };
-}
-
-export function range(random, min, max) {
-  return min + random() * (max - min);
-}
-
-export function pick(random, list) {
-  return list[Math.floor(random() * list.length)];
-}
-
-export function chance(random, probability) {
-  return random() < probability;
 }

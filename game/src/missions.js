@@ -1,105 +1,113 @@
-// The story of Bandar Nusa: Raka, a young courier, owes a debt to Bos
-// Jalak, a harbour boss who collects through fear. Five jobs pay the debt
-// off, one by one. Every name, place and line here is invented for this
-// game.
-//
-// Stage kinds:
-//   goto    — reach a marker
-//   deliver — reach a marker while carrying the package
-//   steal   — take the marked car
-//   survive — stay free while the clock runs down
-//   defeat  — beat every gang member at the marker
-import { CITY, MONEY } from './config.js';
+// The five chained story missions. Pure logic over the world state: no DOM,
+// no THREE, so the Node tests can drive it directly.
+import { LANDMARKS, MISSIONS, WANTED } from './config.js';
 
-export const STORY_INTRO =
-  'Raka, kurir muda Bandar Nusa, berutang Rp 1.400.000 pada Bos Jalak. ' +
-  'Lima pekerjaan — antar paket, kejar setoran, curi mobil, lolos dari razia — ' +
-  'dan utang itu lunas. Kerjakan misinya satu per satu. Hati-hati dengan polisi.';
-
-export const MISSIONS = [
-  {
-    id: 'paket-pertama',
-    title: 'Misi 1 — Paket Pertama',
-    contact: 'Dodi (Bengkel)',
-    briefing:
-      'Raka, Bos Jalak mau lihat kau bisa kerja. Ambil paket di Warung Bu Sari, ' +
-      'antar ke Dermaga Nusa. Jangan macam-macam di jalan.',
-    reward: MONEY.missionReward[0],
-    stages: [
-      { type: 'goto', target: CITY.places.warung, text: 'Ambil paket di Warung Bu Sari' },
-      { type: 'deliver', target: CITY.places.dermaga, text: 'Antar paket ke Dermaga Nusa' },
-    ],
-  },
-  {
-    id: 'setoran-kilat',
-    title: 'Misi 2 — Setoran Kilat',
-    contact: 'Bu Sari (Warung)',
-    briefing:
-      'Setoran pasar harus sampai ke Hotel Nusa Raya sebelum tamu penting datang. ' +
-      'Kau punya 120 detik. Mobil lebih cepat daripada kaki, Raka.',
-    reward: MONEY.missionReward[1],
-    timeLimit: 120,
-    stages: [
-      { type: 'goto', target: CITY.places.pasar, text: 'Ambil setoran di Pasar Ikan' },
-      { type: 'deliver', target: CITY.places.hotel, text: 'Antar setoran ke Hotel Nusa Raya' },
-    ],
-  },
-  {
-    id: 'mobil-titipan',
-    title: 'Misi 3 — Mobil Titipan',
-    contact: 'Dodi (Bengkel)',
-    briefing:
-      'Ada sedan merah parkir di dekat Pasar Ikan. Bos Jalak "meminjamnya". ' +
-      'Bawa ke bengkelku. Mencuri mobil itu menaikkan bintang buronanmu — ' +
-      'jadi jangan sampai ketangkap.',
-    reward: MONEY.missionReward[2],
-    stages: [
-      { type: 'steal', target: { x: 67, z: 30, label: 'Sedan merah' }, text: 'Curi sedan merah di dekat Pasar Ikan (tekan E)' },
-      { type: 'deliver', target: CITY.places.bengkel, text: 'Bawa mobilnya ke Bengkel Dodi' },
-    ],
-  },
-  {
-    id: 'lolos-razia',
-    title: 'Misi 4 — Lolos dari Razia',
-    contact: 'Dodi (Bengkel)',
-    briefing:
-      'Polisi menggelar razia besar malam ini dan namamu ada di daftar. ' +
-      'Bertahan 60 detik tanpa tertangkap. Sembunyi, ngebut, apa saja — asal bebas.',
-    reward: MONEY.missionReward[3],
-    stages: [
-      { type: 'survive', seconds: 60, text: 'Bertahan dari kejaran polisi selama 60 detik' },
-    ],
-  },
-  {
-    id: 'utang-lunas',
-    title: 'Misi 5 — Utang Lunas',
-    contact: 'Bos Jalak',
-    briefing:
-      'Anak buahku menunggu di Gudang Pelabuhan. Bereskan mereka, lalu antar ' +
-      'paket terakhir ke Dermaga. Setelah ini, utangmu lunas, Raka.',
-    reward: MONEY.missionReward[4],
-    stages: [
-      { type: 'defeat', target: CITY.places.gudang, text: 'Kalahkan 3 anak buah Bos Jalak di Gudang Pelabuhan' },
-      { type: 'deliver', target: CITY.places.dermaga, text: 'Antar paket terakhir ke Dermaga Nusa' },
-    ],
-  },
-];
-
-export const STORY_COMPLETE =
-  'Utang lunas. Matahari terbit di atas Dermaga Nusa, dan Raka akhirnya bebas — ' +
-  'kota ini miliknya lagi. Terima kasih sudah bermain. Mode bebas masih terbuka: ' +
-  'jelajahi Bandar Nusa, kumpulkan uang, dan jaga jarak dari polisi.';
-
-// The objective line for the HUD: what to do, where, and how far away it is.
-export function objectiveText(mission, stage, playerX, playerZ) {
-  if (!mission || !stage) {
-    return {
-      text: 'Bebas — jelajahi Bandar Nusa. Tekan E di dekat mobil untuk mengemudi.',
-      target: null,
-      distance: 0,
-    };
-  }
-  const target = stage.target ?? null;
-  const distance = target ? Math.round(Math.hypot(target.x - playerX, target.z - playerZ)) : 0;
-  return { text: stage.text, target, distance };
+export function dist2(a, b) {
+  return Math.hypot(a.x - b.x, a.z - b.z);
 }
+
+export function currentMission(state) {
+  return state.missionIndex < MISSIONS.length ? MISSIONS[state.missionIndex] : null;
+}
+
+export function startMission(state, index) {
+  const def = MISSIONS[index];
+  state.missionIndex = index;
+  state.mission = { status: 'active', timer: def.timeLimit ?? null, survive: 0, gangLeft: def.gang ?? 0 };
+  state.gang = [];
+  if (def.wanted) {
+    state.wanted = def.wanted;
+    state.lastRaise = state.time;
+  }
+  if (def.gang) {
+    for (let i = 0; i < def.gang; i += 1) {
+      state.gang.push({
+        id: `gang-${index}-${i}`,
+        x: LANDMARKS.warehouse.x - 12 + i * 10,
+        z: LANDMARKS.warehouse.z - 8 + (i % 2) * 14,
+        heading: 0,
+        health: 3,
+        attackCooldown: 0,
+        defeated: false,
+      });
+    }
+  }
+  state.events.push({ type: 'missionStart', mission: def });
+}
+
+export function completeMission(state) {
+  const def = MISSIONS[state.missionIndex];
+  state.money += def.reward;
+  state.mission.status = 'done';
+  state.events.push({ type: 'missionComplete', mission: def });
+  state.missionIndex += 1;
+  if (state.missionIndex >= MISSIONS.length) {
+    state.storyComplete = true;
+    state.events.push({ type: 'storyComplete' });
+  } else {
+    startMission(state, state.missionIndex);
+  }
+}
+
+export function failMission(state, reason) {
+  const def = MISSIONS[state.missionIndex];
+  state.events.push({ type: 'missionFailed', mission: def, reason });
+  startMission(state, state.missionIndex);
+}
+
+// Called once per fixed step from the world loop.
+export function updateMissions(state, dt) {
+  const def = currentMission(state);
+  if (!def || state.mission.status !== 'active' || state.storyComplete) return;
+  const p = state.player;
+
+  if (def.timeLimit && state.mission.timer !== null) {
+    state.mission.timer -= dt;
+    if (state.mission.timer <= 0) {
+      failMission(state, 'timeout');
+      return;
+    }
+  }
+
+  if (def.id === 'paket' || def.id === 'setoran') {
+    if (dist2(p, def.target) < 6) completeMission(state);
+    return;
+  }
+
+  if (def.id === 'mobil') {
+    if (!p.onFoot && p.car && p.car.red) completeMission(state);
+    return;
+  }
+
+  if (def.id === 'razia') {
+    if (!p.onFoot && state.wanted >= 3) {
+      state.mission.survive += dt;
+      if (state.mission.survive >= def.survive) {
+        state.wanted = 0;
+        completeMission(state);
+      }
+    }
+    return;
+  }
+
+  if (def.id === 'lunas') {
+    const left = state.gang.filter((g) => !g.defeated).length;
+    state.mission.gangLeft = left;
+    if (left === 0 && dist2(p, def.target) < 7) completeMission(state);
+  }
+}
+
+export function missionObjective(state) {
+  const def = currentMission(state);
+  if (!def) return { label: 'Utang lunas — bebas berkeliling Bandar Nusa!', x: null, z: null };
+  if (def.id === 'lunas' && state.mission.gangLeft > 0) {
+    return { label: `Kalahkan ${state.mission.gangLeft} anak buah Bos Jalak di gudang`, x: LANDMARKS.warehouse.x, z: LANDMARKS.warehouse.z };
+  }
+  if (def.id === 'razia') {
+    return { label: `Bertahan ${Math.ceil(def.survive - state.mission.survive)} detik dengan 3 bintang — tetap mengemudi!`, x: null, z: null };
+  }
+  if (def.target) return { label: def.name, x: def.target.x, z: def.target.z };
+  return { label: def.name, x: null, z: null };
+}
+
+export { WANTED };

@@ -1,109 +1,84 @@
-// The DOM layer over the 3D view: money, health, wanted stars, the clock,
-// the mission objective, the minimap canvas and the menus. The game never
-// draws text in WebGL — the HUD is plain HTML, so it stays crisp at any
-// size. The minimap itself is drawn by the renderer; this file only owns
-// the canvas element.
-export function formatRupiah(amount) {
-  return 'Rp ' + Math.floor(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+// The DOM HUD: money, health, wanted stars, clock, objective, speedometer,
+// prompts, toast messages and the title / pause / busted / complete screens.
+import { DEBT } from './config.js';
+import { missionObjective } from './missions.js';
+
+function rupiah(n) {
+  return `Rp ${Math.floor(n).toLocaleString('id-ID')}`;
 }
 
-export function formatClock(hour) {
-  const h = Math.floor(hour) % 24;
-  const m = Math.floor((hour % 1) * 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-export function createHud(callbacks) {
+export function createHud() {
   const $ = (id) => document.getElementById(id);
-  const moneyEl = $('money');
-  const healthFill = $('health-fill');
-  const healthText = $('health-text');
-  const starsEl = $('stars');
-  const clockEl = $('clock');
-  const objectiveEl = $('objective');
-  const objectiveDist = $('objective-dist');
-  const speedEl = $('speed');
-  const promptEl = $('prompt');
-  const bannerEl = $('banner');
-  const bannerTitle = $('banner-title');
-  const bannerSub = $('banner-sub');
-  const damageEl = $('damage');
-  const mapCanvas = $('minimap');
-  let bannerTimer = 0;
+  const els = {
+    money: $('money'),
+    debt: $('debt'),
+    healthFill: $('health-fill'),
+    healthText: $('health-text'),
+    stars: $('stars'),
+    clock: $('clock'),
+    objective: $('objective'),
+    distance: $('distance'),
+    speed: $('speed'),
+    prompt: $('prompt'),
+    toast: $('toast'),
+    screenTitle: $('screen-title'),
+    screenPause: $('screen-pause'),
+    screenBusted: $('screen-busted'),
+    screenComplete: $('screen-complete'),
+    bustedFine: $('busted-fine'),
+    completeMoney: $('complete-money'),
+    continueBtn: $('btn-continue'),
+  };
+  let toastTimer = 0;
 
-  function update(state, objective, carSpeed) {
-    moneyEl.textContent = formatRupiah(state.player.money);
-    const health = Math.max(0, Math.round(state.player.health));
-    healthFill.style.width = `${health}%`;
-    healthFill.style.background = health > 50 ? '#2fae5f' : health > 25 ? '#e8a13a' : '#d83a3a';
-    healthText.textContent = `${health}`;
-    starsEl.textContent = '★'.repeat(state.wanted) + '☆'.repeat(5 - state.wanted);
-    starsEl.classList.toggle('hot', state.wanted > 0);
-    clockEl.textContent = formatClock(state.time);
-    objectiveEl.textContent = objective.text;
-    objectiveDist.textContent = objective.distance > 0 ? `${objective.distance} m` : '';
-    if (carSpeed !== null && carSpeed !== undefined) {
-      speedEl.style.display = 'block';
-      speedEl.textContent = `${Math.round(Math.abs(carSpeed) * 3.6)} km/h`;
-    } else {
-      speedEl.style.display = 'none';
-    }
-    damageEl.style.opacity = state.player.health < 30
-      ? String(0.25 + (30 - state.player.health) / 100)
-      : '0';
-  }
-
-  function setPrompt(text) {
-    if (text) {
-      promptEl.textContent = text;
-      promptEl.style.display = 'block';
-    } else {
-      promptEl.style.display = 'none';
-    }
-  }
-
-  function showBanner(title, sub, ms = 3600) {
-    bannerTitle.textContent = title;
-    bannerSub.textContent = sub ?? '';
-    bannerEl.classList.add('show');
-    window.clearTimeout(bannerTimer);
-    bannerTimer = window.setTimeout(() => bannerEl.classList.remove('show'), ms);
-  }
-
-  function hideBanner() {
-    bannerEl.classList.remove('show');
+  function showToast(text) {
+    els.toast.textContent = text;
+    els.toast.classList.add('show');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => els.toast.classList.remove('show'), 2600);
   }
 
   function showScreen(name) {
-    for (const screen of document.querySelectorAll('.screen')) screen.classList.remove('show');
-    if (name) $(`screen-${name}`).classList.add('show');
+    const map = { title: els.screenTitle, pause: els.screenPause, busted: els.screenBusted, complete: els.screenComplete };
+    for (const [k, el] of Object.entries(map)) {
+      if (el) el.classList.toggle('hidden', k !== name);
+    }
   }
 
-  function setContinueVisible(visible) {
-    $('btn-continue').style.display = visible ? 'inline-block' : 'none';
+  function update(state) {
+    const p = state.player;
+    els.money.textContent = rupiah(state.money);
+    els.debt.textContent = `Utang: ${rupiah(Math.max(0, DEBT - state.money))}`;
+    els.healthFill.style.width = `${Math.max(0, state.health)}%`;
+    els.healthText.textContent = `${Math.ceil(state.health)}`;
+    els.stars.textContent = '★'.repeat(state.wanted) + '☆'.repeat(5 - state.wanted);
+    els.stars.classList.toggle('hot', state.wanted > 0);
+    const h = Math.floor(state.clock / 3600) % 24;
+    const m = Math.floor((state.clock % 3600) / 60);
+    els.clock.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const obj = missionObjective(state);
+    state.missionTarget = obj.x === null ? null : { x: obj.x, z: obj.z };
+    els.objective.textContent = obj.label;
+    if (obj.x === null) {
+      els.distance.textContent = '';
+    } else {
+      const d = Math.hypot(p.x - obj.x, p.z - obj.z);
+      els.distance.textContent = `${Math.round(d)} m`;
+    }
+    const kmh = Math.round(Math.abs(p.car ? p.car.speed : 0) * 3.6);
+    els.speed.textContent = p.onFoot ? '—' : `${kmh} km/h`;
+    let prompt = '';
+    if (p.onFoot) {
+      const near = state.cars.find((c) => c.kind !== 'police' && Math.hypot(p.x - c.x, p.z - c.z) < 3.5);
+      if (near) prompt = '[E] Naik mobil' + (near.red ? ' — sedan merah!' : '');
+      else if (state.gang.some((g) => !g.defeated && Math.hypot(p.x - g.x, p.z - g.z) < 6)) prompt = '[F] Pukul!';
+      else prompt = 'WASD jalan · Shift lari · E naik mobil';
+    } else {
+      prompt = '[E] Keluar mobil · [Spasi] Rem tangan';
+    }
+    if (state.wanted > 0) prompt += ` · Polisi mengejar! (${state.wanted}★)`;
+    els.prompt.textContent = prompt;
   }
 
-  function bindButtons() {
-    $('btn-start').addEventListener('click', () => callbacks.onStart(false));
-    $('btn-continue').addEventListener('click', () => callbacks.onStart(true));
-    $('btn-resume').addEventListener('click', () => callbacks.onResume());
-    $('btn-save').addEventListener('click', () => callbacks.onSave());
-    $('btn-quit').addEventListener('click', () => callbacks.onQuitToTitle());
-    $('btn-busted').addEventListener('click', () => callbacks.onResumeAfterBusted());
-    $('btn-complete').addEventListener('click', () => callbacks.onFreeRoam());
-    $('btn-mute').addEventListener('click', () => callbacks.onMute());
-  }
-
-  function setMuteLabel(muted) {
-    $('btn-mute').textContent = muted ? '🔇 Suara: Mati' : '🔊 Suara: Hidup';
-  }
-
-  function setBustedText(reason) {
-    $('busted-text').textContent = reason;
-  }
-
-  return {
-    update, setPrompt, showBanner, hideBanner, showScreen, setContinueVisible,
-    bindButtons, setMuteLabel, setBustedText, mapCanvas,
-  };
+  return { update, showToast, showScreen, els };
 }

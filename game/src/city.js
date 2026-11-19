@@ -1,287 +1,109 @@
-// Bandar Nusa itself: a procedural coastal city built from boxes, canvas
-// textures and a little seeded randomness. Roads form a grid, the south
-// edge is a beach with a pier, and the centre is a taller downtown.
-// Nothing here is copied from any real map — every street, shop and tower
-// is invented for this game.
-import * as THREE from 'three';
-import { CITY, COLORS } from './config.js';
-import { range, pick } from './random.js';
+// Procedural city data: blocks, buildings, landmarks, stalls, palms,
+// streetlights, parked-car spots and cash pickups. Pure data — no THREE,
+// no DOM — so the logic tests can import it in Node.
+import { BLOCK, GRID, HALF, LANDMARKS, PARKED_COUNT, PICKUP_COUNT, PITCH, ROADS } from './config.js';
 
-const WALL_COLORS = ['#e8dcc0', '#d9a06b', '#7fa8a0', '#c96f4a', '#e5e0d5', '#a8b8c8', '#d8c08a', '#b0705a'];
-const ROOF_COLORS = ['#8a4a3a', '#5a6a72', '#7a5a3a', '#4a5a6a', '#96503f'];
+const SPECIAL_BLOCKS = new Set(['-2,0', '1,-1', '-3,-2']);
 
-function facadeTexture(random, base, floors, cols) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 128;
-  const g = canvas.getContext('2d');
-  g.fillStyle = base;
-  g.fillRect(0, 0, 64, 128);
-  g.fillStyle = 'rgba(0,0,0,0.12)';
-  g.fillRect(0, 0, 64, 6);
-  for (let floor = 0; floor < floors; floor += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const x = 6 + col * ((64 - 12) / cols);
-      const y = 12 + floor * ((128 - 20) / floors);
-      const w = (64 - 12) / cols - 4;
-      const h = (128 - 20) / floors - 5;
-      g.fillStyle = random() < 0.22 ? '#ffd98a' : '#2c3e50';
-      g.fillRect(x, y, w, h);
-      g.fillStyle = 'rgba(255,255,255,0.25)';
-      g.fillRect(x, y, w, 2);
-    }
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+function blockCenter(bx, bz) {
+  return { x: -HALF + ROAD_HALF(bx), z: -HALF + ROAD_HALF(bz) };
+}
+function ROAD_HALF(i) {
+  return 12 + i * PITCH + BLOCK / 2;
 }
 
-function box(w, h, d, material) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
+const FACADES = ['sand', 'brick', 'teal', 'cream', 'slate', 'ochre'];
 
-// A building's footprint as an axis-aligned box, for collisions.
-function collider(x, z, w, d) {
-  return { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 };
-}
-
-export function buildCity(scene, random) {
-  const colliders = [];
-  const lampMaterials = [];
-  const group = new THREE.Group();
-  scene.add(group);
-
-  const roads = CITY.roads;
-  const half = CITY.half;
-
-  // Ground: grass base, with road strips, sidewalks and sand laid on top.
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(half * 2 + 120, half * 2 + 120),
-    new THREE.MeshLambertMaterial({ color: COLORS.grass }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, -0.05, 40);
-  ground.receiveShadow = true;
-  group.add(ground);
-
-  const roadMat = new THREE.MeshLambertMaterial({ color: COLORS.road });
-  const walkMat = new THREE.MeshLambertMaterial({ color: COLORS.sidewalk });
-  const sandMat = new THREE.MeshLambertMaterial({ color: COLORS.sand });
-  const seaMat = new THREE.MeshLambertMaterial({ color: COLORS.sea });
-
-  for (const c of roads) {
-    const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(CITY.roadWidth, half * 2), roadMat);
-    vRoad.rotation.x = -Math.PI / 2;
-    vRoad.position.set(c, 0, 0);
-    vRoad.receiveShadow = true;
-    group.add(vRoad);
-    const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, CITY.roadWidth), roadMat);
-    hRoad.rotation.x = -Math.PI / 2;
-    hRoad.position.set(0, 0, c);
-    hRoad.receiveShadow = true;
-    group.add(hRoad);
-    // Sidewalk ribbons along each road.
-    for (const off of [-CITY.roadWidth / 2 - 2, CITY.roadWidth / 2 + 2]) {
-      const vWalk = new THREE.Mesh(new THREE.PlaneGeometry(4, half * 2), walkMat);
-      vWalk.rotation.x = -Math.PI / 2;
-      vWalk.position.set(c + off, 0.02, 0);
-      vWalk.receiveShadow = true;
-      group.add(vWalk);
-      const hWalk = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, 4), walkMat);
-      hWalk.rotation.x = -Math.PI / 2;
-      hWalk.position.set(0, 0.02, c + off);
-      hWalk.receiveShadow = true;
-      group.add(hWalk);
-    }
-  }
-
-  // Beach and sea along the south edge, plus the wooden pier at the dermaga.
-  const sand = new THREE.Mesh(new THREE.PlaneGeometry(half * 2 + 120, 60), sandMat);
-  sand.rotation.x = -Math.PI / 2;
-  sand.position.set(0, 0.01, CITY.beachStart + 28);
-  sand.receiveShadow = true;
-  group.add(sand);
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(half * 2 + 400, 200), seaMat);
-  sea.rotation.x = -Math.PI / 2;
-  sea.position.set(0, -0.4, CITY.seaStart + 100);
-  group.add(sea);
-  const pierMat = new THREE.MeshLambertMaterial({ color: 0x8a6a4a });
-  const pier = box(8, 0.6, 46, pierMat);
-  pier.position.set(0, 0.6, 238);
-  group.add(pier);
-  for (let i = 0; i < 6; i += 1) {
-    const post = box(0.8, 2.4, 0.8, pierMat);
-    post.position.set(i % 2 === 0 ? -3.6 : 3.6, 0, 220 + i * 7);
-    group.add(post);
-  }
-
-  // Buildings, one to three per block. Downtown blocks grow taller.
-  const textureCache = new Map();
-  function facade(base, floors, cols) {
-    const key = `${base}|${floors}|${cols}`;
-    if (!textureCache.has(key)) textureCache.set(key, facadeTexture(random, base, floors, cols));
-    return textureCache.get(key);
-  }
-
-  const roofMat = new THREE.MeshLambertMaterial({ color: 0x6a5a4a });
-  for (let bi = 0; bi < roads.length - 1; bi += 1) {
-    for (let bj = 0; bj < roads.length - 1; bj += 1) {
-      const cx = (roads[bi] + roads[bi + 1]) / 2;
-      const cz = (roads[bj] + roads[bj + 1]) / 2;
-      if (cz > CITY.beachStart - 30) continue; // beach blocks stay open
-      const downtown = Math.abs(cx) <= 60 && Math.abs(cz) <= 60;
-      const count = downtown ? 1 : 1 + Math.floor(random() * 3);
-      for (let k = 0; k < count; k += 1) {
-        const w = range(random, 14, 26);
-        const d = range(random, 14, 26);
-        const h = downtown ? range(random, 24, 58) : range(random, 8, 24);
-        const ox = count === 1 ? 0 : range(random, -10, 10);
-        const oz = count === 1 ? 0 : range(random, -10, 10);
-        const x = cx + ox;
-        const z = cz + oz;
-        const base = pick(random, WALL_COLORS);
-        const floors = Math.max(2, Math.round(h / 4));
-        const mat = new THREE.MeshLambertMaterial({ map: facade(base, Math.min(floors, 12), 4) });
-        const building = box(w, h, d, mat);
-        building.position.set(x, h / 2, z);
-        group.add(building);
-        const roof = box(w + 0.6, 0.8, d + 0.6, roofMat);
-        roof.position.set(x, h + 0.4, z);
-        group.add(roof);
-        // A few rooftops get a water tank or antenna for silhouette.
-        if (random() < 0.4) {
-          const tank = new THREE.Mesh(
-            new THREE.CylinderGeometry(1.6, 1.6, 2.4, 8),
-            new THREE.MeshLambertMaterial({ color: 0x4a5a6a }),
-          );
-          tank.position.set(x + w / 4, h + 1.6, z - d / 4);
-          tank.castShadow = true;
-          group.add(tank);
-        }
-        colliders.push(collider(x, z, w, d));
+export function createCity(rng) {
+  const buildings = [];
+  for (let bx = 0; bx < GRID; bx += 1) {
+    for (let bz = 0; bz < GRID; bz += 1) {
+      const key = `${bx - 3},${bz - 3}`;
+      if (SPECIAL_BLOCKS.has(key)) continue;
+      const c = blockCenter(bx, bz);
+      const n = rng.int(1, 3);
+      for (let i = 0; i < n; i += 1) {
+        const w = rng.range(12, 22);
+        const d = rng.range(12, 22);
+        const x = c.x + rng.range(-6, 6);
+        const z = c.z + rng.range(-6, 6);
+        buildings.push({
+          x,
+          z,
+          w,
+          d,
+          h: rng.range(7, 30),
+          floors: rng.int(2, 8),
+          facade: rng.pick(FACADES),
+          seed: rng.int(0, 999999),
+        });
       }
     }
   }
 
-  // Landmark buildings the story names, placed on purpose rather than by chance.
-  function landmark(x, z, w, h, d, color, label) {
-    const floors = Math.min(Math.max(2, Math.round(h / 4)), 12);
-    const mat = new THREE.MeshLambertMaterial({ map: facade(color, floors, 5) });
-    const building = box(w, h, d, mat);
-    building.position.set(x, h / 2, z);
-    group.add(building);
-    colliders.push(collider(x, z, w, d));
-    return { x, z, label };
+  // Market stalls crowd the block by the fish market.
+  const stalls = [];
+  for (let i = 0; i < 8; i += 1) {
+    stalls.push({
+      x: LANDMARKS.market.x - 14 + (i % 4) * 9 + rng.range(-1, 1),
+      z: LANDMARKS.market.z - 10 + Math.floor(i / 4) * 12 + rng.range(-1, 1),
+      color: rng.pick(['#e4572e', '#17a398', '#f2a541', '#5b8def']),
+    });
   }
-  const landmarks = [
-    landmark(CITY.places.hotel.x, CITY.places.hotel.z, 30, 52, 22, '#a8b8c8', 'Hotel Nusa Raya'),
-    landmark(CITY.places.gudang.x, CITY.places.gudang.z, 34, 12, 20, '#b0705a', 'Gudang Pelabuhan'),
-    landmark(CITY.places.rumahSakit.x, CITY.places.rumahSakit.z, 28, 16, 20, '#e5e0d5', 'Rumah Sakit Nusa'),
-    landmark(CITY.places.warung.x, CITY.places.warung.z, 12, 6, 10, '#d9a06b', 'Warung Bu Sari'),
-    landmark(CITY.places.bengkel.x, CITY.places.bengkel.z, 20, 8, 14, '#7fa8a0', 'Bengkel Dodi'),
-  ];
 
-  // Market stalls near the pasar: striped awnings on thin posts.
-  for (let i = 0; i < 6; i += 1) {
-    const sx = CITY.places.pasar.x - 18 + i * 7;
-    const sz = CITY.places.pasar.z + 14;
-    const awning = new THREE.Mesh(
-      new THREE.BoxGeometry(5, 0.3, 4),
-      new THREE.MeshLambertMaterial({ color: i % 2 === 0 ? 0xc96f4a : 0x3f7f6a }),
-    );
-    awning.position.set(sx, 2.6, sz);
-    awning.castShadow = true;
-    group.add(awning);
-    for (const px of [-2.2, 2.2]) {
-      const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.12, 2.6, 6),
-        new THREE.MeshLambertMaterial({ color: 0x5a4a3a }),
-      );
-      post.position.set(sx + px, 1.3, sz);
-      group.add(post);
+  // Palms line the beach and dot the plaza.
+  const palms = [];
+  for (let i = 0; i < 26; i += 1) {
+    palms.push({ x: HALF + 6 + rng.range(0, 30), z: -HALF + 10 + (i / 26) * (HALF * 2 - 20) + rng.range(-4, 4) });
+  }
+  for (let i = 0; i < 10; i += 1) {
+    palms.push({ x: rng.range(-30, 30), z: rng.range(-30, 30) });
+  }
+
+  // Streetlights along every road, every 26 units.
+  const lights = [];
+  for (const r of ROADS) {
+    for (let t = -HALF + 20; t < HALF - 10; t += 26) {
+      lights.push({ x: r + 5.5, z: t });
+      lights.push({ x: t, z: r + 5.5 });
     }
   }
 
-  // Palm trees along the beach and a few in the alun-alun.
-  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6a4a2a });
-  const leafMat = new THREE.MeshLambertMaterial({ color: 0x3f8a4a });
-  function palm(x, z) {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 5, 6), trunkMat);
-    trunk.position.set(x, 2.5, z);
-    trunk.castShadow = true;
-    group.add(trunk);
-    const crown = new THREE.Mesh(new THREE.ConeGeometry(2.6, 2.2, 7), leafMat);
-    crown.position.set(x, 5.8, z);
-    crown.castShadow = true;
-    group.add(crown);
+  // Parked cars on roadside spots; spot 0 is the red sedan for mission 3.
+  const parkedSpots = [];
+  const used = new Set();
+  const spotRoads = [ROADS[1], ROADS[2], ROADS[4], ROADS[5]];
+  let guard = 0;
+  while (parkedSpots.length < PARKED_COUNT && guard < 200) {
+    guard += 1;
+    const road = rng.pick(spotRoads);
+    const along = rng.range(-HALF + 30, HALF - 30);
+    const key = `${Math.round(road / 10)}:${Math.round(along / 20)}`;
+    if (used.has(key)) continue;
+    used.add(key);
+    const horizontal = rng.next() < 0.5;
+    parkedSpots.push({
+      x: horizontal ? along : road + 4,
+      z: horizontal ? road + 4 : along,
+      heading: horizontal ? 0 : Math.PI / 2,
+      red: parkedSpots.length === 0,
+    });
   }
-  for (let x = -200; x <= 200; x += 40) {
-    palm(x + range(random, -6, 6), CITY.beachStart + range(random, 2, 18));
-  }
-  for (let i = 0; i < 8; i += 1) palm(range(random, -24, 24), range(random, -24, 24));
+  // The red sedan sits on the east road, where mission 3 says it is.
+  parkedSpots[0] = { x: 104, z: -52, heading: Math.PI / 2, red: true };
 
-  // Streetlights at intersections; their lamps glow after dark.
-  const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a3f46 });
-  for (const rx of roads) {
-    for (const rz of roads) {
-      if (rz > CITY.beachStart - 30) continue;
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 6, 6), poleMat);
-      pole.position.set(rx + 8, 3, rz + 8);
-      group.add(pole);
-      const lampMat = new THREE.MeshLambertMaterial({ color: 0xfff2cf, emissive: 0x000000 });
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), lampMat);
-      lamp.position.set(rx + 8, 6.1, rz + 8);
-      group.add(lamp);
-      lampMaterials.push(lampMat);
-    }
+  // Cash pickups on sidewalks and plaza corners.
+  const pickups = [];
+  for (let i = 0; i < PICKUP_COUNT; i += 1) {
+    const road = rng.pick(ROADS);
+    const along = rng.range(-HALF + 20, HALF - 20);
+    pickups.push({
+      x: rng.next() < 0.5 ? road + 8 : along,
+      z: rng.next() < 0.5 ? along : road + 8,
+    });
   }
 
-  // Parked cars waiting at curbs, and cash pickup spots on sidewalks.
-  const parkedSpots = [
-    { x: 67, z: 30, heading: Math.PI / 2, color: 0xc0392b, model: 'sedan' },
-    { x: -67, z: -90, heading: -Math.PI / 2, color: 0x2e6da4, model: 'sedan' },
-    { x: 127, z: -30, heading: Math.PI / 2, color: 0xd8c23a, model: 'taxi' },
-    { x: -7, z: 127, heading: 0, color: 0x7a7a7a, model: 'sedan' },
-    { x: 67, z: 150, heading: Math.PI / 2, color: 0x3f7f6a, model: 'pickup' },
-    { x: -127, z: 30, heading: -Math.PI / 2, color: 0x8a2f6a, model: 'sedan' },
-    { x: 187, z: 90, heading: Math.PI / 2, color: 0xdddddd, model: 'sedan' },
-    { x: -67, z: 187, heading: -Math.PI / 2, color: 0x2a2a2a, model: 'sedan' },
-  ];
-  const pickupSpots = [
-    { x: -52, z: -68 }, { x: 8, z: -8 }, { x: 68, z: 52 }, { x: 128, z: -112 },
-    { x: -112, z: 128 }, { x: -172, z: 188 }, { x: 8, z: 232 }, { x: 188, z: 98 },
-    { x: -52, z: 128 }, { x: 128, z: 188 }, { x: -188, z: -112 }, { x: 68, z: -128 },
-  ];
-
-  return { colliders, lampMaterials, landmarks, parkedSpots, pickupSpots, group };
+  return { buildings, stalls, palms, lights, parkedSpots, pickups };
 }
 
-// The nearest point on a road centreline to (x, z), for spawning and routing.
-export function nearestRoadPoint(x, z) {
-  let best = null;
-  let bestD = Infinity;
-  for (const c of CITY.roads) {
-    const d1 = Math.abs(x - c);
-    if (d1 < bestD) { bestD = d1; best = { x: c, z, vertical: true }; }
-    const d2 = Math.abs(z - c);
-    if (d2 < bestD) { bestD = d2; best = { x, z: c, vertical: false }; }
-  }
-  return best;
-}
-
-export function isOnRoad(x, z) {
-  for (const c of CITY.roads) {
-    if (Math.abs(x - c) < CITY.roadWidth / 2 || Math.abs(z - c) < CITY.roadWidth / 2) return true;
-  }
-  return false;
-}
-
-export function randomStreetPosition(random) {
-  const road = CITY.roads[Math.floor(random() * CITY.roads.length)];
-  const along = range(random, -CITY.half + 20, CITY.half - 20);
-  if (random() < 0.5) return { x: road, z: along, vertical: true };
-  return { x: along, z: road, vertical: false };
-}
+export { ROADS };

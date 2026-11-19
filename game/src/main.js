@@ -1,27 +1,20 @@
 // Boot and the one loop: input is read every frame, the world advances in
-// fixed 1/60 s steps, and the renderer paints what is there. The game moves
-// between five screens: title, play, paused, busted and story-complete.
-//
-// ?seed=N fixes the city and traffic. ?shot=start|drive|chase|mission (with
-// &seed=N) stages that scene instead of running the loop, paints it twice
-// and sets window.__shotReady for a screenshot.
+// fixed 1/60 s steps, the renderer paints what is there, and the HUD follows.
+// Screens: title, play, paused, busted, complete.
+// ?seed=N fixes the city. ?shot=start|drive|chase|mission (with &seed=N)
+// stages that scene instead of running the loop, paints it twice and sets
+// window.__shotReady for a screenshot.
+import { STEP } from './config.js';
 import { createRandom } from './random.js';
-import { buildCity } from './city.js';
-import {
-  createWorld,
-  EVENT_PICKUP, EVENT_CRASH, EVENT_PUNCH, EVENT_WANTED_UP, EVENT_STAGE,
-  EVENT_MISSION_COMPLETE, EVENT_MISSION_FAILED, EVENT_BUSTED, EVENT_STORY_COMPLETE,
-  EVENT_GANG_DOWN,
-} from './world.js';
-import { createRenderer } from './render.js';
-import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_MUTE } from './input.js';
+import { createWorld, stepWorld } from './world.js';
+import { createInput } from './input.js';
 import { createAudio } from './audio.js';
-import { createHud, formatRupiah } from './hud.js';
-import { hasSave, saveGame, loadGame } from './save.js';
+import { createHud } from './hud.js';
+import { applySave, loadGame, saveGame } from './save.js';
+import { createRenderer, SCREEN_BUSTED, SCREEN_COMPLETE, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 import { stageShot } from './shots.js';
-import { MISSIONS, STORY_INTRO, STORY_COMPLETE, objectiveText } from './missions.js';
+import { startMission } from './missions.js';
 
-const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
 
 const params = new URLSearchParams(window.location.search);
@@ -30,194 +23,103 @@ const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
 
 const canvas = document.getElementById('game');
-const statusEl = document.getElementById('status');
-const hudRoot = document.getElementById('hud');
+const minimap = document.getElementById('minimap');
+const state = createWorld(createRandom(seed));
+state.camera = { yaw: Math.PI, pitch: 0.32, dist: 14 };
+state.missionTarget = null;
 
-const random = createRandom(seed);
-const renderer = createRenderer(canvas);
-const city = buildCity(renderer.scene, random);
-const world = createWorld(random, city);
-const input = createInput(canvas);
+const renderer = createRenderer(canvas, minimap);
+const hud = createHud();
 const audio = createAudio();
-
-function announce(message) {
-  statusEl.textContent = message;
+const saved = loadGame();
+if (saved && saved.missionIndex < 5) {
+  hud.els.continueBtn.classList.remove('hidden');
 }
 
-const hud = createHud({
-  onStart: (useSave) => startGame(useSave),
-  onResume: () => resumeGame(),
-  onSave: () => {
-    if (saveGame(world.serialize())) hud.showBanner('Tersimpan', 'Progres Raka tersimpan di browser ini.');
-  },
-  onQuitToTitle: () => showTitle(),
-  onResumeAfterBusted: () => resumeGame(),
-  onFreeRoam: () => resumeGame(),
-  onMute: () => {
-    audio.ensure();
-    hud.setMuteLabel(audio.setMuted(!audio.isMuted()));
-  },
-});
-hud.bindButtons();
+let screen = SCREEN_TITLE;
+let accumulator = 0;
+let last = performance.now();
 
-let screen = 'title';
-
-function setHudVisible(visible) {
-  hudRoot.classList.toggle('show', visible);
-}
-
-function showTitle() {
-  screen = 'title';
-  world.reset();
-  hud.showScreen('title');
-  hud.setContinueVisible(hasSave());
-  setHudVisible(false);
-  audio.setMusic(false);
-  audio.siren(false);
-  audio.engine(0, false);
-  announce('Bandar Nusa. Press Enter or click Mula to play.');
-}
-
-function startGame(useSave) {
-  audio.ensure();
-  audio.setMusic(true);
-  audio.click();
-  world.reset();
-  if (useSave) {
-    const data = loadGame();
-    if (data) {
-      world.deserialize(data);
-      if (!data.storyDone && data.missionIndex < MISSIONS.length) world.startMission(data.missionIndex);
-    }
-  } else {
-    world.startMission(0);
-    hud.showBanner(MISSIONS[0].title, MISSIONS[0].briefing, 5200);
+function show(screenName) {
+  screen = screenName;
+  const all = [hud.els.screenTitle, hud.els.screenPause, hud.els.screenBusted, hud.els.screenComplete];
+  if (screenName === SCREEN_PLAY) {
+    for (const el of all) if (el) el.classList.add('hidden');
+    return;
   }
-  screen = 'play';
-  hud.showScreen(null);
-  setHudVisible(true);
-  announce('Playing. Follow the yellow marker.');
+  // hud.showScreen keys screens by their element suffix: 'pause', not the
+  // render constant 'paused'.
+  hud.showScreen(screenName === SCREEN_PAUSED ? 'pause' : screenName);
 }
 
-function resumeGame() {
-  audio.click();
-  screen = 'play';
-  hud.showScreen(null);
-  setHudVisible(true);
-  announce('Playing.');
-}
-
-function pauseGame() {
-  screen = 'paused';
-  hud.showScreen('paused');
-  announce('Paused.');
+function startGame(fromSave) {
+  if (fromSave && saved) {
+    applySave(state, saved);
+    // Re-arm the mission chain at the saved step; banked money stays banked.
+    const idx = Math.min(saved.missionIndex, 4);
+    if (idx > 0) startMission(state, idx);
+  }
+  show(SCREEN_PLAY);
+  audio.unlock();
 }
 
 function handleEvents(events) {
-  for (const event of events) {
-    if (event === EVENT_PICKUP) {
+  for (const e of events) {
+    if (e.type === 'pickup') {
+      hud.showToast(`+Rp ${e.value.toLocaleString('id-ID')}`);
       audio.pickup();
-      hud.showBanner('Uang ditemukan', `+${formatRupiah(25000)}`, 1800);
-    } else if (event === EVENT_CRASH) {
-      audio.crash();
-    } else if (event === EVENT_PUNCH) {
+    } else if (e.type === 'missionComplete') {
+      hud.showToast(`${e.mission.name} selesai! +Rp ${e.mission.reward.toLocaleString('id-ID')}`);
+      audio.jingle();
+      saveGame(state);
+    } else if (e.type === 'missionStart') {
+      hud.showToast(e.mission.brief);
+    } else if (e.type === 'missionFailed') {
+      hud.showToast(`${e.mission.name} gagal (${e.reason}) — coba lagi!`);
+    } else if (e.type === 'busted') {
+      audio.busted();
+      show(SCREEN_BUSTED);
+      hud.els.bustedFine.textContent = `Denda Rp ${e.fine.toLocaleString('id-ID')} — kamu ditangkap polisi dan dibawa ke Rumah Sakit.`;
+      saveGame(state);
+    } else if (e.type === 'storyComplete') {
+      audio.fanfare();
+      show(SCREEN_COMPLETE);
+      hud.els.completeMoney.textContent = `Total uang: Rp ${state.money.toLocaleString('id-ID')} — utang Rp 1.400.000 lunas!`;
+      saveGame(state);
+    } else if (e.type === 'punch') {
       audio.punch();
-    } else if (event === EVENT_WANTED_UP) {
-      hud.showBanner('Buronan!', `Bintang buronanmu naik menjadi ${world.state.wanted}.`, 2600);
-    } else if (event === EVENT_STAGE) {
-      audio.pickup();
-      const mission = world.currentMission();
-      const stage = world.currentStage();
-      if (mission && stage) hud.showBanner(mission.title, stage.text, 3200);
-    } else if (event === EVENT_MISSION_COMPLETE) {
-      const done = MISSIONS[world.state.missionIndex];
-      audio.jingle();
-      hud.showBanner('Misi selesai!', `${done.title} — hadiah ${formatRupiah(done.reward)}.`, 4200);
-      saveGame(world.serialize());
-      const next = world.state.missionIndex + 1;
-      if (next < MISSIONS.length && !world.state.storyDone) {
-        world.startMission(next);
-        const upcoming = MISSIONS[next];
-        window.setTimeout(() => {
-          if (screen === 'play') hud.showBanner(upcoming.title, upcoming.briefing, 5200);
-        }, 4300);
-      }
-    } else if (event === EVENT_MISSION_FAILED) {
-      audio.fail();
-      if (!world.state.missionActive) {
-        world.startMission(world.state.missionIndex);
-        hud.showBanner('Misi gagal', 'Coba lagi — misinya dimulai dari awal.', 3200);
-      } else {
-        hud.showBanner('Misi gagal', 'Kamu tertangkap — misi dimulai dari awal.', 3200);
-      }
-    } else if (event === EVENT_BUSTED) {
-      audio.fail();
-      audio.siren(false);
-      hud.setBustedText(world.state.bustReason ?? 'Kamu tertangkap.');
-      screen = 'busted';
-      hud.showScreen('busted');
-      setHudVisible(false);
-      announce('Busted.');
-    } else if (event === EVENT_GANG_DOWN) {
-      hud.showBanner('Satu tumbang!', 'Teruskan, Raka.', 1600);
-    } else if (event === EVENT_STORY_COMPLETE) {
-      audio.jingle();
-      document.getElementById('complete-text').textContent = STORY_COMPLETE;
-      screen = 'complete';
-      hud.showScreen('complete');
-      setHudVisible(false);
-      saveGame(world.serialize());
-      announce('Story complete.');
+    } else if (e.type === 'crash') {
+      audio.crash();
+    } else if (e.type === 'stolen') {
+      hud.showToast('Mobil dicuri! Polisi waspada.');
+    } else if (e.type === 'hitPed') {
+      hud.showToast('Kamu menabrak pejalan kaki!');
     }
   }
 }
 
-function currentObjective() {
-  const mission = world.currentMission();
-  const stage = world.currentStage();
-  const player = world.state.player;
-  return objectiveText(mission, stage, player.x, player.z);
-}
-
-function interactionPrompt() {
-  const player = world.state.player;
-  if (player.onFoot) {
-    const car = world.nearestCar(player.x, player.z, 4.5);
-    if (!car) return null;
-    if (car.missionTarget && !car.owned) return '[E] Curi sedan merah';
-    return car.owned ? '[E] Masuk mobil' : '[E] Masuk mobil (mencuri = +1 bintang)';
-  }
-  return '[E] Keluar mobil';
-}
-
 function runShot(name) {
-  const scene = stageShot(name, world);
-  hud.setContinueVisible(false);
-  // Stage the chase camera behind the player: the two paint calls do not
-  // run long enough for the orbit to settle on its own.
-  if (name === 'drive' || name === 'chase') renderer.setOrbit(0);
-  if (name === 'mission') renderer.setOrbit(Math.PI);
-  if (name !== 'start') renderer.setDistance(15);
-  if (scene.screen === 'title') {
-    hud.showScreen('title');
-    setHudVisible(false);
-    document.getElementById('story-intro').textContent = STORY_INTRO;
-  } else {
-    hud.showScreen(null);
-    setHudVisible(true);
-    const objective = currentObjective();
-    hud.update(world.state, objective, world.state.player.onFoot ? null : world.playerCar()?.speed ?? 0);
-    hud.setPrompt(null);
-    const mission = world.currentMission();
-    const stage = world.currentStage();
-    if (mission && stage) hud.showBanner(mission.title, stage.text, 60000);
+  const scene = stageShot(name, state);
+  if (scene.screen !== SCREEN_TITLE) {
+    // No title overlay over a gameplay shot, and the camera sits behind the
+    // player so the car, the chase or the gang is actually in frame.
+    show(SCREEN_PLAY);
+    state.camera.yaw = state.player.heading;
   }
+  hud.update(state);
+  window.__debugState = () => ({
+    player: { x: +state.player.x.toFixed(1), z: +state.player.z.toFixed(1), heading: +state.player.heading.toFixed(2), onFoot: state.player.onFoot },
+    camera: { yaw: +state.camera.yaw.toFixed(2), pitch: state.camera.pitch, dist: state.camera.dist },
+    wanted: state.wanted,
+    mission: state.missionIndex,
+    money: state.money,
+    cars: state.cars.length,
+    police: state.police.length,
+    playerInBuilding: state.city.buildings.filter((b) => Math.abs(state.player.x - b.x) < b.w / 2 && Math.abs(state.player.z - b.z) < b.d / 2).map((b) => ({ x: b.x, z: b.z, w: b.w, d: b.d, h: b.h })),
+  });
   let painted = 0;
   function paint() {
-    renderer.sync(STEP, input, world.state.time, world, city);
-    const mission = world.currentMission();
-    const stage = world.currentStage();
-    renderer.drawMinimap(hud.mapCanvas, world.state, stage?.target ?? null, city);
+    renderer.draw(state, scene.screen);
     painted += 1;
     if (painted < 2) requestAnimationFrame(paint);
     else window.__shotReady = true;
@@ -226,72 +128,86 @@ function runShot(name) {
 }
 
 function runGame() {
-  let accumulator = 0;
-  let last = performance.now();
-  showTitle();
+  const input = createInput(canvas);
+  show(SCREEN_TITLE);
+
+  document.getElementById('btn-start').addEventListener('click', () => startGame(false));
+  document.getElementById('btn-continue').addEventListener('click', () => startGame(true));
+  document.getElementById('btn-resume').addEventListener('click', () => show(SCREEN_PLAY));
+  document.getElementById('btn-restart').addEventListener('click', () => {
+    const fresh = createWorld(createRandom(seed));
+    Object.assign(state, fresh);
+    state.camera = { yaw: Math.PI, pitch: 0.32, dist: 14 };
+    show(SCREEN_PLAY);
+  });
+  document.getElementById('btn-roam').addEventListener('click', () => show(SCREEN_PLAY));
+  document.getElementById('btn-busted-ok').addEventListener('click', () => show(SCREEN_PLAY));
 
   function frame(now) {
     requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    const actions = input.takeActions();
-    if (actions & ACTION_MUTE) {
-      audio.ensure();
-      hud.setMuteLabel(audio.setMuted(!audio.isMuted()));
+    const held = input.poll();
+    const once = input.consume();
+    state.camera.yaw += once.dragYaw;
+    state.camera.pitch = Math.max(0.05, Math.min(1.1, state.camera.pitch + once.dragPitch));
+    state.camera.dist = Math.max(8, Math.min(30, state.camera.dist + once.zoom));
+    if (screen === SCREEN_PLAY) {
+      // The camera eases back behind the player so driving never leaves the
+      // car out of frame; mouse drag still orbits freely.
+      let dy = state.player.heading - state.camera.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      state.camera.yaw += dy * Math.min(1, ((now - last) / 1000) * 2.2);
     }
-    if (screen === 'title') {
-      if (actions & ACTION_CONFIRM) startGame(false);
-      while (accumulator >= STEP) {
-        world.attract(STEP);
-        accumulator -= STEP;
+    if (once.mute) {
+      const muted = audio.toggleMute();
+      hud.showToast(muted ? 'Suara mati' : 'Suara hidup');
+    }
+    if (once.pause) {
+      if (screen === SCREEN_PLAY) {
+        show(SCREEN_PAUSED);
+        saveGame(state);
+      } else if (screen === SCREEN_PAUSED) {
+        show(SCREEN_PLAY);
       }
-      renderer.sync(STEP, input, world.state.time, world, city);
-      return;
     }
-    if (screen === 'paused') {
-      if (actions & (ACTION_PAUSE | ACTION_CONFIRM)) resumeGame();
-      accumulator = 0;
-      renderer.sync(0, input, world.state.time, world, city);
-      return;
+    if (screen === SCREEN_TITLE && once.confirm) startGame(false);
+    if (screen === SCREEN_PLAY) {
+      audio.unlock();
+      const dt = Math.min(MAX_FRAME, (now - last) / 1000);
+      last = now;
+      accumulator += dt;
+      let steps = 0;
+      while (accumulator >= STEP && steps < 5) {
+        const events = stepWorld(state, {
+          forward: held.forward,
+          back: held.back,
+          left: held.left,
+          right: held.right,
+          run: held.run,
+          handbrake: held.handbrake,
+          enter: once.enter,
+          punch: once.punch,
+          cameraYaw: state.camera.yaw,
+        });
+        handleEvents(events);
+        once.enter = false;
+        once.punch = false;
+        accumulator -= STEP;
+        steps += 1;
+      }
+      audio.update(dt, { speed: state.player.speed, wanted: state.wanted, driving: !state.player.onFoot });
+      hud.update(state);
+      renderer.draw(state, SCREEN_PLAY);
+    } else {
+      last = now;
+      if (screen === SCREEN_TITLE) {
+        hud.update(state);
+        renderer.draw(state, SCREEN_TITLE);
+      }
     }
-    if (screen === 'busted' || screen === 'complete') {
-      if (actions & ACTION_CONFIRM) resumeGame();
-      accumulator = 0;
-      renderer.sync(0, input, world.state.time, world, city);
-      return;
-    }
-    // screen === 'play'
-    if (actions & ACTION_PAUSE) {
-      pauseGame();
-      renderer.sync(0, input, world.state.time, world, city);
-      return;
-    }
-    while (accumulator >= STEP) {
-      const events = world.step(STEP, input, renderer.orbitYaw, actions);
-      handleEvents(events);
-      accumulator -= STEP;
-    }
-    const car = world.playerCar();
-    audio.engine(car ? Math.abs(car.speed) / 27 : 0, !!car);
-    audio.siren(world.state.wanted > 0);
-    audio.update();
-    const objective = currentObjective();
-    hud.update(world.state, objective, car ? car.speed : null);
-    hud.setPrompt(interactionPrompt());
-    const stage = world.currentStage();
-    renderer.drawMinimap(hud.mapCanvas, world.state, stage?.target ?? null, city);
-    renderer.sync(STEP, input, world.state.time, world, city);
   }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === 'play') pauseGame();
-  });
-
-  announce('Bandar Nusa. Press Space or click to start.');
   requestAnimationFrame(frame);
 }
-
-document.getElementById('story-intro').textContent = STORY_INTRO;
 
 if (shot) runShot(shot);
 else runGame();

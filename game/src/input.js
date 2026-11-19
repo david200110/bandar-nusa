@@ -1,94 +1,113 @@
-// Keyboard and mouse. Held keys are read live every frame; one-shot
-// actions (confirm, pause, enter a car, punch, mute) are edges — takeActions()
-// reports a press only on the frame the key went down, so holding E never
-// spams the action.
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
-export const ACTION_INTERACT = 4;
-export const ACTION_PUNCH = 8;
-export const ACTION_MUTE = 16;
-
-const EDGE_CODES = ['Enter', 'Space', 'Escape', 'KeyP', 'KeyE', 'KeyF', 'KeyM'];
-const SCROLL_CODES = ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+// Keyboard + mouse input. Builds one plain input object per frame:
+// { forward, back, left, right, run, enter, punch, handbrake, pause, mute,
+//   confirm, dragYaw, dragPitch, zoom, clicked }.
+// Edge-triggered actions (enter, punch, pause, mute, confirm, clicked) are
+// consumed by the game loop: read them once per frame, then they clear.
+export const ACTION_CONFIRM = 'confirm';
+export const ACTION_PAUSE = 'pause';
 
 export function createInput(canvas) {
-  const down = new Set();
-  const edges = new Set();
-  let mouseDX = 0;
-  let mouseDY = 0;
+  const keys = new Set();
+  const state = {
+    forward: false,
+    back: false,
+    left: false,
+    right: false,
+    run: false,
+    handbrake: false,
+    enter: false,
+    punch: false,
+    pause: false,
+    mute: false,
+    confirm: false,
+    clicked: false,
+    dragYaw: 0,
+    dragPitch: 0,
+    zoom: 0,
+  };
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
-  let clicked = false;
 
-  window.addEventListener('keydown', (event) => {
-    if (event.repeat) return;
-    down.add(event.code);
-    if (EDGE_CODES.includes(event.code)) edges.add(event.code);
-    if (SCROLL_CODES.includes(event.code)) event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    down.delete(event.code);
-  });
-  window.addEventListener('blur', () => {
-    down.clear();
-  });
+  function key(e, down) {
+    const k = e.key.toLowerCase();
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+    if (down) {
+      if (k === 'e') state.enter = true;
+      if (k === 'f') state.punch = true;
+      if (k === 'escape' || k === 'p') state.pause = true;
+      if (k === 'm') state.mute = true;
+      if (k === 'enter') state.confirm = true;
+    }
+    if (down) keys.add(k);
+    else keys.delete(k);
+  }
 
-  canvas.addEventListener('mousedown', (event) => {
+  const onKeyDown = (e) => key(e, true);
+  const onKeyUp = (e) => key(e, false);
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+
+  const onDown = (e) => {
     dragging = true;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    clicked = true;
-  });
-  window.addEventListener('mousemove', (event) => {
+    lastX = e.clientX;
+    lastY = e.clientY;
+  };
+  const onMove = (e) => {
     if (!dragging) return;
-    mouseDX += event.clientX - lastX;
-    mouseDY += event.clientY - lastY;
-    lastX = event.clientX;
-    lastY = event.clientY;
-  });
-  window.addEventListener('mouseup', () => {
+    state.dragYaw -= (e.clientX - lastX) * 0.005;
+    state.dragPitch += (e.clientY - lastY) * 0.004;
+    state.dragPitch = Math.max(-0.1, Math.min(0.9, state.dragPitch));
+    lastX = e.clientX;
+    lastY = e.clientY;
+  };
+  const onUp = (e) => {
+    if (dragging && Math.abs(e.clientX - lastX) < 4 && Math.abs(e.clientY - lastY) < 4) {
+      state.clicked = true;
+    }
     dragging = false;
-  });
+  };
+  const onWheel = (e) => {
+    state.zoom += Math.sign(e.deltaY);
+  };
+  canvas.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('wheel', onWheel, { passive: true });
 
-  function isDown(code) {
-    return down.has(code);
-  }
-
-  // WASD / arrows. y is -1 forward (W), x is strafe.
-  function moveAxis() {
-    let x = 0;
-    let y = 0;
-    if (isDown('KeyA') || isDown('ArrowLeft')) x -= 1;
-    if (isDown('KeyD') || isDown('ArrowRight')) x += 1;
-    if (isDown('KeyW') || isDown('ArrowUp')) y -= 1;
-    if (isDown('KeyS') || isDown('ArrowDown')) y += 1;
-    return { x, y };
-  }
-
-  function takeMouse() {
-    const delta = { x: mouseDX, y: mouseDY };
-    mouseDX = 0;
-    mouseDY = 0;
-    return delta;
-  }
-
-  function takeClick() {
-    const was = clicked;
-    clicked = false;
-    return was;
-  }
-
-  function takeActions() {
-    let actions = 0;
-    if (edges.has('Enter') || edges.has('Space')) actions |= ACTION_CONFIRM;
-    if (edges.has('Escape') || edges.has('KeyP')) actions |= ACTION_PAUSE;
-    if (edges.has('KeyE')) actions |= ACTION_INTERACT;
-    if (edges.has('KeyF')) actions |= ACTION_PUNCH;
-    if (edges.has('KeyM')) actions |= ACTION_MUTE;
-    edges.clear();
-    return actions;
-  }
-
-  return { isDown, moveAxis, takeMouse, takeClick, takeActions };
+  return {
+    // Held keys, refreshed every frame.
+    poll() {
+      state.forward = keys.has('w') || keys.has('arrowup');
+      state.back = keys.has('s') || keys.has('arrowdown');
+      state.left = keys.has('a') || keys.has('arrowleft');
+      state.right = keys.has('d') || keys.has('arrowright');
+      state.run = keys.has('shift');
+      state.handbrake = keys.has(' ');
+      return state;
+    },
+    // One-shot actions: read then clear.
+    consume() {
+      const out = {
+        enter: state.enter,
+        punch: state.punch || state.clicked,
+        pause: state.pause,
+        mute: state.mute,
+        confirm: state.confirm,
+        dragYaw: state.dragYaw,
+        dragPitch: state.dragPitch,
+        zoom: state.zoom,
+      };
+      state.enter = false;
+      state.punch = false;
+      state.pause = false;
+      state.mute = false;
+      state.confirm = false;
+      state.clicked = false;
+      state.dragYaw = 0;
+      state.dragPitch = 0;
+      state.zoom = 0;
+      return out;
+    },
+  };
 }
