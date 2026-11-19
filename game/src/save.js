@@ -1,6 +1,6 @@
-// Save and load through localStorage: money, health, position, mission progress
-// and the clock. Saving never touches the network, and a missing or corrupt
-// save simply means a fresh start.
+// Save and load through localStorage: money, health, position, mission
+// progress and the clock. Saving never touches the network. A missing or
+// corrupt save just means a fresh start.
 import { SAVE_KEY } from './config.js';
 
 export function hasSave() {

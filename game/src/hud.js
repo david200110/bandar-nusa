@@ -1,8 +1,8 @@
-// The DOM layer over the 3D view: money, health, wanted stars, the clock, the
-// mission objective, the minimap and the menus. The game never draws text in
-// WebGL — the HUD is plain HTML, so it stays crisp at any size.
-import { MONEY } from './config.js';
-
+// The DOM layer over the 3D view: money, health, wanted stars, the clock,
+// the mission objective, the minimap canvas and the menus. The game never
+// draws text in WebGL — the HUD is plain HTML, so it stays crisp at any
+// size. The minimap itself is drawn by the renderer; this file only owns
+// the canvas element.
 export function formatRupiah(amount) {
   return 'Rp ' + Math.floor(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
@@ -48,7 +48,9 @@ export function createHud(callbacks) {
     } else {
       speedEl.style.display = 'none';
     }
-    damageEl.style.opacity = state.player.health < 30 ? String(0.25 + (30 - state.player.health) / 100) : '0';
+    damageEl.style.opacity = state.player.health < 30
+      ? String(0.25 + (30 - state.player.health) / 100)
+      : '0';
   }
 
   function setPrompt(text) {

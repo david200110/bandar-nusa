@@ -1,6 +1,6 @@
-// What the player sees: the Three.js scene, the chase camera and the minimap.
-// The world owns the numbers; this file only turns them into meshes, light and
-// a top-down map. Nothing here decides rules.
+// What the player sees: the Three.js scene, the chase camera and the
+// minimap. The world owns the numbers; this file only turns them into
+// meshes, light and a top-down map. Nothing here decides rules.
 import * as THREE from 'three';
 import { CITY, COLORS } from './config.js';
 
@@ -17,7 +17,10 @@ function makePersonMesh(shirtColor, skinColor = 0xd8a077) {
   head.position.y = 1.72;
   head.castShadow = true;
   group.add(head);
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), new THREE.MeshLambertMaterial({ color: 0xc0392b }));
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.14, 0.5),
+    new THREE.MeshLambertMaterial({ color: 0xc0392b }),
+  );
   cap.position.y = 1.94;
   group.add(cap);
   const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.8, 0.24), pants);
@@ -50,12 +53,18 @@ function makeCarMesh(color, model) {
   cabin.castShadow = true;
   group.add(cabin);
   if (model === 'pickup') {
-    const bed = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 1.6), new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+    const bed = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.4, 1.6),
+      new THREE.MeshLambertMaterial({ color: 0x2a2a2a }),
+    );
     bed.position.set(0, 1.05, 1.3);
     group.add(bed);
   }
   if (model === 'taxi') {
-    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 0.4), new THREE.MeshLambertMaterial({ color: 0xf2c200, emissive: 0x664400 }));
+    const sign = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 0.25, 0.4),
+      new THREE.MeshLambertMaterial({ color: 0xf2c200, emissive: 0x664400 }),
+    );
     sign.position.set(0, 1.72, -0.25);
     group.add(sign);
   }
@@ -130,7 +139,10 @@ export function createRenderer(canvas) {
   // Mission beacon: a column of light and a floating diamond over the target.
   const beacon = new THREE.Mesh(
     new THREE.CylinderGeometry(3, 3, 40, 16, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd23f, transparent: true, opacity: 0.16,
+      side: THREE.DoubleSide, depthWrite: false,
+    }),
   );
   beacon.visible = false;
   scene.add(beacon);
@@ -166,7 +178,8 @@ export function createRenderer(canvas) {
   function skyFor(hour) {
     // 6:00 sunrise, 12:00 noon, 18:00 sunset, 0:00 midnight.
     const day = Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI));
-    const dusk = Math.max(0, 1 - Math.abs(hour - 18) / 2.5) + Math.max(0, 1 - Math.abs(hour - 6) / 2.5);
+    const dusk = Math.max(0, 1 - Math.abs(hour - 18) / 2.5)
+      + Math.max(0, 1 - Math.abs(hour - 6) / 2.5);
     const sky = new THREE.Color(COLORS.skyDay).lerp(new THREE.Color(COLORS.skyNight), 1 - day);
     if (dusk > 0) sky.lerp(new THREE.Color(COLORS.skyDusk), Math.min(0.7, dusk * 0.7));
     return { sky, day, dusk };
@@ -181,7 +194,9 @@ export function createRenderer(canvas) {
     const mouse = input.takeMouse();
     orbitYaw -= mouse.x * 0.005;
     orbitPitch = Math.max(0.08, Math.min(1.0, orbitPitch + mouse.y * 0.003));
-    const moving = car ? Math.abs(car.speed) > 1 : (input.moveAxis().x !== 0 || input.moveAxis().y !== 0);
+    const moving = car
+      ? Math.abs(car.speed) > 1
+      : (input.moveAxis().x !== 0 || input.moveAxis().y !== 0);
     const followHeading = car ? car.heading : player.heading;
     if (moving) {
       let diff = followHeading - orbitYaw;
@@ -207,7 +222,9 @@ export function createRenderer(canvas) {
     scene.background.copy(sky);
     scene.fog.color.copy(sky);
     const sunAngle = ((time - 6) / 12) * Math.PI;
-    const sunDir = new THREE.Vector3(Math.cos(sunAngle), Math.max(0.08, Math.sin(sunAngle)), 0.35).normalize();
+    const sunDir = new THREE.Vector3(
+      Math.cos(sunAngle), Math.max(0.08, Math.sin(sunAngle)), 0.35,
+    ).normalize();
     sun.position.set(tx + sunDir.x * 160, sunDir.y * 160 + 20, tz + sunDir.z * 160);
     sun.target.position.set(tx, 0, tz);
     sun.intensity = 0.35 + day * 1.9;

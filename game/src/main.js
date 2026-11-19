@@ -1,10 +1,10 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed
-// 1/60 s steps, and the renderer paints what is there. The game moves between
-// five screens: title, play, paused, busted and story-complete.
+// Boot and the one loop: input is read every frame, the world advances in
+// fixed 1/60 s steps, and the renderer paints what is there. The game moves
+// between five screens: title, play, paused, busted and story-complete.
 //
 // ?seed=N fixes the city and traffic. ?shot=start|drive|chase|mission (with
-// &seed=N) stages that scene instead of running the loop, paints it twice and
-// sets window.__shotReady for a screenshot.
+// &seed=N) stages that scene instead of running the loop, paints it twice
+// and sets window.__shotReady for a screenshot.
 import { createRandom } from './random.js';
 import { buildCity } from './city.js';
 import {

@@ -1,7 +1,8 @@
 // Bandar Nusa itself: a procedural coastal city built from boxes, canvas
-// textures and a little seeded randomness. Roads form a grid, the south edge is a
-// beach with a pier, and the centre is a taller downtown. Nothing here is copied
-// from any real map — every street, shop and tower is invented for this game.
+// textures and a little seeded randomness. Roads form a grid, the south
+// edge is a beach with a pier, and the centre is a taller downtown.
+// Nothing here is copied from any real map — every street, shop and tower
+// is invented for this game.
 import * as THREE from 'three';
 import { CITY, COLORS } from './config.js';
 import { range, pick } from './random.js';
@@ -56,7 +57,7 @@ export function buildCity(scene, random) {
   const roads = CITY.roads;
   const half = CITY.half;
 
-  // Ground: grass base, then road strips, sidewalks and sand on top of it.
+  // Ground: grass base, with road strips, sidewalks and sand laid on top.
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(half * 2 + 120, half * 2 + 120),
     new THREE.MeshLambertMaterial({ color: COLORS.grass }),
@@ -152,7 +153,10 @@ export function buildCity(scene, random) {
         group.add(roof);
         // A few rooftops get a water tank or antenna for silhouette.
         if (random() < 0.4) {
-          const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 2.4, 8), new THREE.MeshLambertMaterial({ color: 0x4a5a6a }));
+          const tank = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.6, 1.6, 2.4, 8),
+            new THREE.MeshLambertMaterial({ color: 0x4a5a6a }),
+          );
           tank.position.set(x + w / 4, h + 1.6, z - d / 4);
           tank.castShadow = true;
           group.add(tank);
@@ -164,7 +168,8 @@ export function buildCity(scene, random) {
 
   // Landmark buildings the story names, placed on purpose rather than by chance.
   function landmark(x, z, w, h, d, color, label) {
-    const mat = new THREE.MeshLambertMaterial({ map: facade(color, Math.min(Math.max(2, Math.round(h / 4)), 12), 5) });
+    const floors = Math.min(Math.max(2, Math.round(h / 4)), 12);
+    const mat = new THREE.MeshLambertMaterial({ map: facade(color, floors, 5) });
     const building = box(w, h, d, mat);
     building.position.set(x, h / 2, z);
     group.add(building);
@@ -191,7 +196,10 @@ export function buildCity(scene, random) {
     awning.castShadow = true;
     group.add(awning);
     for (const px of [-2.2, 2.2]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.6, 6), new THREE.MeshLambertMaterial({ color: 0x5a4a3a }));
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.12, 2.6, 6),
+        new THREE.MeshLambertMaterial({ color: 0x5a4a3a }),
+      );
       post.position.set(sx + px, 1.3, sz);
       group.add(post);
     }
@@ -210,7 +218,9 @@ export function buildCity(scene, random) {
     crown.castShadow = true;
     group.add(crown);
   }
-  for (let x = -200; x <= 200; x += 40) palm(x + range(random, -6, 6), CITY.beachStart + range(random, 2, 18));
+  for (let x = -200; x <= 200; x += 40) {
+    palm(x + range(random, -6, 6), CITY.beachStart + range(random, 2, 18));
+  }
   for (let i = 0; i < 8; i += 1) palm(range(random, -24, 24), range(random, -24, 24));
 
   // Streetlights at intersections; their lamps glow after dark.

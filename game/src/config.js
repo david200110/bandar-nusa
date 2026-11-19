@@ -1,9 +1,12 @@
-// Bandar Nusa — shared tuning and city layout. Every number the game balances on
-// lives here so the world, the renderer and the missions all agree on one city.
+// Bandar Nusa — one place for every number the game balances on.
+// The city layout, the player, the cars, the wanted system, the money and
+// the clock all live here, so world, renderer and missions never disagree.
+
 export const SAVE_KEY = 'bandar-nusa-save-v1';
 
-// The city is a grid of streets. Roads run along these coordinates on both axes;
-// blocks are the 60 m squares between them. South of the last road is the beach.
+// A grid city. Streets run along these coordinates on both axes; the squares
+// between them are 60 m blocks. South of the last street is the beach,
+// then the sea.
 export const CITY = {
   roads: [-180, -120, -60, 0, 60, 120, 180],
   half: 210,
@@ -11,7 +14,7 @@ export const CITY = {
   block: 60,
   beachStart: 210,
   seaStart: 258,
-  // Named places the story sends Raka to (x east, z south).
+  // Places the story names (x east, z south).
   places: {
     warung: { x: -60, z: -60, label: 'Warung Bu Sari' },
     dermaga: { x: 0, z: 238, label: 'Dermaga Nusa' },
@@ -24,7 +27,7 @@ export const CITY = {
   },
 };
 
-// The player on foot.
+// Raka on foot.
 export const PLAYER = {
   walkSpeed: 4.5,
   runSpeed: 7.5,
@@ -37,7 +40,8 @@ export const PLAYER = {
   regenRate: 3,
 };
 
-// Cars: acceleration, top speed and steering. Police are a little faster at high stars.
+// Cars: how they accelerate, steer and top out. Police get quicker as the
+// wanted level climbs.
 export const CAR = {
   accel: 14,
   brake: 26,
@@ -50,7 +54,8 @@ export const CAR = {
   policePerStar: 1.6,
 };
 
-// Wanted level: 0 to 5 stars. Crimes add stars; hiding and time take them away.
+// Wanted: 0–5 stars. Crimes add stars; staying quiet and out of sight
+// sheds them. A police car that holds Raka on foot busts him.
 export const WANTED = {
   max: 5,
   stealCar: 1,
@@ -63,14 +68,14 @@ export const WANTED = {
   bustFineFraction: 0.1,
 };
 
-// Money is in rupiah; the HUD formats it as Rp 150.000.
+// Money is rupiah. The HUD prints it as Rp 150.000.
 export const MONEY = {
   start: 50000,
   pickup: 25000,
   missionReward: [150000, 250000, 200000, 300000, 500000],
 };
 
-// A game day lasts 8 real minutes; the sun follows the clock.
+// One game day is 8 real minutes, starting at 09:00. The sun follows it.
 export const DAY_LENGTH_SECONDS = 480;
 export const DAY_START_HOUR = 9;
 

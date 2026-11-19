@@ -1,8 +1,8 @@
-// Screenshot scenes behind ?shot=start|drive|chase|mission. Each one plays the
-// real rules forward from a fresh world for a fixed number of steps — a scripted
-// driver holds the wheel, the police really chase, the gang really approaches —
-// so the frame is what the game actually looks like, and the same seed always
-// gives the same frame. Nothing here is a mock render.
+// Screenshot scenes behind ?shot=start|drive|chase|mission. Each one plays
+// the real rules forward from a fresh world for a fixed number of steps — a
+// scripted driver holds the wheel, the police really chase, the gang really
+// approaches — so the frame is what the game actually looks like, and the
+// same seed always gives the same frame. Nothing here is a mock render.
 import { CITY } from './config.js';
 
 const STEP = 1 / 60;

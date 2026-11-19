@@ -1,12 +1,12 @@
-// A tiny seeded random generator (mulberry32) so a ?seed= in the URL rebuilds the
-// exact same city, traffic and pedestrians every time — the screenshot scenes and
-// any player who shares a seed see the same Bandar Nusa.
+// Seeded randomness (mulberry32). A ?seed= in the URL rebuilds the same
+// city, the same traffic and the same pedestrians, so a shared seed always
+// shows the same Bandar Nusa — including the screenshot scenes.
 export function createRandom(seed) {
-  let a = seed >>> 0;
+  let state = seed >>> 0;
   return function random() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };

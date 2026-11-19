@@ -1,9 +1,14 @@
-// The story of Bandar Nusa: Raka, a young courier, owes a debt to Bos Jalak,
-// a harbour boss who collects through fear. Five jobs pay the debt off, one by
-// one. Every name, place and line here is invented for this game.
-// Stage types: goto (reach a marker), steal (take the marked car), survive
-// (stay free while the clock runs), defeat (beat the gang members), deliver
-// (reach a marker carrying the package).
+// The story of Bandar Nusa: Raka, a young courier, owes a debt to Bos
+// Jalak, a harbour boss who collects through fear. Five jobs pay the debt
+// off, one by one. Every name, place and line here is invented for this
+// game.
+//
+// Stage kinds:
+//   goto    — reach a marker
+//   deliver — reach a marker while carrying the package
+//   steal   — take the marked car
+//   survive — stay free while the clock runs down
+//   defeat  — beat every gang member at the marker
 import { CITY, MONEY } from './config.js';
 
 export const STORY_INTRO =
@@ -85,9 +90,15 @@ export const STORY_COMPLETE =
   'kota ini miliknya lagi. Terima kasih sudah bermain. Mode bebas masih terbuka: ' +
   'jelajahi Bandar Nusa, kumpulkan uang, dan jaga jarak dari polisi.';
 
-// The current objective line for the HUD: what to do, where, and how far.
+// The objective line for the HUD: what to do, where, and how far away it is.
 export function objectiveText(mission, stage, playerX, playerZ) {
-  if (!mission || !stage) return { text: 'Bebas — jelajahi Bandar Nusa. Tekan E di dekat mobil untuk mengemudi.', target: null, distance: 0 };
+  if (!mission || !stage) {
+    return {
+      text: 'Bebas — jelajahi Bandar Nusa. Tekan E di dekat mobil untuk mengemudi.',
+      target: null,
+      distance: 0,
+    };
+  }
   const target = stage.target ?? null;
   const distance = target ? Math.round(Math.hypot(target.x - playerX, target.z - playerZ)) : 0;
   return { text: stage.text, target, distance };
