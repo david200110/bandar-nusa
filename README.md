@@ -4,86 +4,97 @@
 [![rank](https://make.fun/badge/gta6-01/david200110/bandar-nusa/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/david200110/bandar-nusa/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-An open-world crime game set in the fictional Indonesian coastal city of
-**Bandar Nusa**, built for the [make.fun](https://make.fun) **Make GTA 6**
-bounty (`gta6-01`). Everything in it is original: the city, the characters,
-the story, the art, the sound and the music. Nothing comes from Rockstar
-Games or any other commercial game.
+Game open-world 3D berlatar kota pesisir fiktif di Indonesia. Kamu bermain
+sebagai Raka, kurir muda yang terlilit utang Rp 1.400.000 kepada Bos Jalak,
+penguasa pelabuhan. Satu-satunya jalan keluar: bekerja untuknya — antar paket,
+setor uang, curi mobil, kabur dari razia, sampai berurusan dengan gengnya.
+Lunasi utang itu, maka kota ini bebas kamu jelajahi sesuka hati.
 
-## The story
+## Cerita
 
-Raka, a young courier in Bandar Nusa, owes Rp 1,400,000 to Bos Jalak, a
-harbour boss who collects through fear. Five jobs pay the debt off, one by
-one: deliver a package, race a deadline, steal a car, survive a police
-sweep, and settle the score at the harbour warehouse. After the story,
-free roam stays open.
+Raka bukan orang jahat. Ia cuma kurir yang salah mengambil pekerjaan.
+Bos Jalak meminjaminya uang, lalu menagihnya dengan bunga yang tidak masuk
+akal. Lima pekerjaan berantai menantinya, masing-masing makin berisiko.
+Setiap misi yang selesai memotong utang sedikit demi sedikit. Kalau lima
+misi tuntas, utang lunas — dan Bandar Nusa jadi milikmu untuk dijelajahi
+tanpa beban.
 
-## How to play
+## Cara bermain
 
-```sh
+| Tombol | Aksi |
+| ------ | ---- |
+| W A S D / panah | Jalan kaki atau mengemudi |
+| Shift | Berlari |
+| E | Masuk / keluar mobil |
+| F atau klik mouse | Memukul |
+| Spasi | Rem tangan |
+| Seret mouse | Memutar kamera |
+| Roda mouse | Zoom kamera |
+| Esc / P | Jeda |
+| M | Bisukan suara |
+
+Berjalan kakilah ke penanda misi untuk memulainya. Mobil yang terparkir
+bisa diambil — tapi hati-hati, mencuri mobil menaikkan level buronan.
+
+## Misi
+
+Lima misi berantai. Selesaikan satu untuk membuka misi berikutnya.
+
+1. **Paket Pertama** — Rp 150.000
+   Antar paket pertama Bos Jalak ke alamat tujuan. Pengenalan kota.
+2. **Setoran Kilat** — Rp 250.000
+   Antar setoran dalam batas waktu 120 detik. Terlambat berarti gagal.
+3. **Mobil Titipan** — Rp 200.000
+   Curi sedan merah yang diminta Bos Jalak. Polisi tidak akan senang.
+4. **Lolos dari Razia** — Rp 300.000
+   Bertahan 60 detik sambil dikejar polisi di level buronan 3.
+5. **Utang Lunas** — Rp 500.000
+   Kalahkan 3 anggota geng, lalu antar barang terakhir ke dermaga.
+   Selesaikan ini dan utang Raka lunas.
+
+Total hadiah misi: Rp 1.400.000 — persis sebesar utang Raka. Uang tunai
+tambahan juga tersebar di penjuru kota.
+
+## Fitur
+
+- **Kota prosedural** — jalanan, pasar ikan, pantai, dan dermaga yang
+  dibangun dari seed; langit berganti siang dan malam.
+- **Kota yang hidup** — mobil lalu-lalang dan pejalan kaki yang
+  berlarian kalau ada mobil ngebut di dekatnya.
+- **Level buronan 0–5 bintang** — mencuri mobil atau menabrak orang
+  menaikkan bintang. Polisi mengejar, menabrak, dan menangkap.
+  Tertangkap berarti diantar ke rumah sakit dan dipotong denda 10%.
+- **Berkelahi** — pukul anggota geng yang menghalangi jalanmu.
+- **HUD dan minimap** — uang, nyawa, bintang buronan, jam, jarak ke
+  tujuan, dan spidometer selalu terlihat.
+- **Simpan otomatis** — progres tersimpan di localStorage setiap misi
+  selesai; tombol Lanjutkan memuatnya kembali.
+
+## Menjalankan
+
+Butuh Node.js 22 atau lebih baru. Tidak ada proses build.
+
+```bash
 node serve.ts
-# open http://localhost:8080 in desktop Chrome
 ```
 
-The game is plain static files under `game/` — no build step, no network
-requests at runtime. It also runs by opening `game/index.html` from any
-static file server.
+Lalu buka <http://localhost:8080> di Chrome desktop.
 
-| Key | Action |
-| --- | --- |
-| W A S D / arrows | Walk / drive |
-| Shift | Run |
-| E | Get in / out of a car (stealing one raises your wanted level) |
-| F or mouse click | Punch |
-| Space | Handbrake |
-| Drag mouse | Orbit camera, wheel zooms |
-| Esc / P | Pause |
-| M | Mute |
+Untuk membuat dossier make.fun:
 
-## Features
-
-- **A living city**: a procedural grid city with a downtown, a fish market,
-  a beach and a pier; traffic that drives the streets and pedestrians who
-  walk the sidewalks (and flee from speeding cars).
-- **On foot and by car**: walk, run, steal parked and moving cars, drive
-  with steering, braking and a handbrake.
-- **Wanted level**: five stars. Stealing cars and hitting pedestrians raise
-  it; police cars chase and ram you, and they bust you if they hold you on
-  foot. Stay quiet and out of sight and the heat cools down.
-- **Missions and a story**: five chained missions with briefings, timed
-  deliveries, a car theft, a 60-second police evasion and a final fight
-  against Bos Jalak's crew — plus cash pickups scattered around the city.
-- **Combat**: punch gang members who attack you; your health regenerates
-  when you stay out of trouble.
-- **HUD and minimap**: money, health, wanted stars, the clock, the current
-  objective with distance, a speedometer and a live top-down minimap.
-- **Save and load**: progress autosaves after each mission; pause to save
-  manually, continue from the title screen.
-- **Sound**: all audio is synthesized live with WebAudio — an original
-  groove, engine hum, police sirens, punches, crashes and jingles. No
-  audio files, no licensed music.
-- **Day cycle**: the sun moves with the game clock; streetlights come on
-  after dark.
-
-## Tech
-
-- Three.js r160, vendored as `game/vendor/three.module.min.js`.
-- Plain ES modules under `game/src/`, one job per file: `config`, `random`,
-  `input`, `audio`, `city`, `world`, `missions`, `render`, `hud`, `save`,
-  `shots`, `main`.
-- `?seed=N` rebuilds the same city and traffic. `?shot=start|drive|chase|mission`
-  stages a screenshot scene through the real rules.
-
-## Entry
-
-`main.ts` (Node 22, standard library only) copies `game/` and `screenshots/`
-to `/output` and writes `/output/dossier.json` with the vendored make.fun
-library (`vendor/makefun-game.ts`, unchanged from the kit):
-
-```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+```bash
+MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
-## License
+## Teknologi
 
-MIT — see [LICENSE](LICENSE).
+- Three.js r160 (disertakan di `game/vendor/`) untuk grafis 3D low-poly.
+- Semua suara dan musik dibuat langsung dengan WebAudio — tanpa file audio.
+- Tanpa build step, tanpa request jaringan saat bermain.
+- Semua nama, karakter, kendaraan, dan cerita adalah orisinal dan tidak
+  diambil dari Rockstar Games.
+
+## Kredit
+
+Dibangun oleh agen AI untuk bounty "Make GTA 6" di make.fun
+(hadiah $1.666 USDC), di bawah lisensi MIT.
