@@ -1,514 +1,347 @@
-// The world simulation: player, cars, pedestrians, police, gang, pickups,
-// wanted level, busts, collisions and the day clock. Pure logic — no THREE,
-// no DOM — so Node tests can step it with plain input objects.
-import {
-  BLOCK, CAR, CLOCK_RATE, CLOCK_START, GANG, HALF, LANDMARKS, PICKUP_VALUE,
-  PICKUP_COUNT, PLAYER, ROADS, STEP, TRAFFIC, PEDS, WANTED, WORLD_EAST,
-} from './config.js';
-import { createCity } from './city.js';
-import { completeMission, currentMission, failMission, startMission, updateMissions } from './missions.js';
+// Procedural city for Bandar Nusa: grid roads, low-poly buildings with
+// generated window textures, a beach, sea and wooden pier, palms and
+// streetlights. Everything is built from the seed, so the city is the
+// same on every load.
 
-export { STEP };
+import * as THREE from '../vendor/three.module.min.js';
+import { WORLD, COLORS } from './config.js';
+import { mulberry32, range, intRange, pick } from './random.js';
 
-export function dist2(a, b) {
-  return Math.hypot(a.x - b.x, a.z - b.z);
-}
-function angleTo(a, b) {
-  // Heading h faces (-sin h, -cos h); to face (dx, dz) is atan2(-dx, -dz).
-  return Math.atan2(-(b.x - a.x), -(b.z - a.z));
-}
-function angleDiff(a, b) {
-  let d = a - b;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
-}
-function nearestRoad(v) {
-  let best = ROADS[0];
-  for (const r of ROADS) if (Math.abs(v - r) < Math.abs(v - best)) best = r;
-  return best;
-}
+const ROAD_LINES = [-132, -88, -44, 0, 44, 88, 132];
 
-function makeCar(id, kind, x, z, heading, color) {
-  return { id, kind, x, z, heading, speed: 0, color, parked: kind === 'parked', red: false, axis: 'x', dir: 1 };
-}
+const BUILDING_COLORS = [0xc9a06a, 0x9fb4c7, 0xb98a7a, 0x8fa98f, 0xc7b299, 0x7d8aa0, 0xd0c0a0];
+const CAR_COLORS = [0xc23b2e, 0x2e6fc2, 0xe0a52e, 0x3fae6a, 0xe8e8e8, 0x222831];
 
-export function createWorld(rng, opts = {}) {
-  const city = createCity(rng);
-  const state = {
-    rng,
-    time: 0,
-    clock: opts.clock ?? CLOCK_START,
-    money: opts.money ?? 0,
-    health: PLAYER.maxHealth,
-    wanted: 0,
-    lastRaise: -1e9,
-    decayTimer: 0,
-    quietTime: 0,
-    storyComplete: false,
-    missionIndex: 0,
-    mission: { status: 'active', timer: null, survive: 0, gangLeft: 0 },
-    gang: [],
-    city,
-    player: {
-      x: LANDMARKS.spawn.x,
-      z: LANDMARKS.spawn.z,
-      heading: 0,
-      speed: 0,
-      onFoot: true,
-      car: null,
-      punchCooldown: 0,
-      lastDamage: -1e9,
-      bustHold: 0,
-    },
-    cars: [],
-    peds: [],
-    police: [],
-    pickups: city.pickups.map((p, i) => ({ id: `pickup-${i}`, x: p.x, z: p.z, taken: false })),
-    events: [],
-    pedRespawn: 0,
-    policeSpawn: 0,
-  };
+// Named places the missions use. All sit beside a road so the player and
+// the minimap can reach them.
+export const PLACES = {
+  spawn: { x: 0, z: -8, label: 'Central Plaza' },
+  pier: { x: 4, z: 176, label: 'Old Pier' },
+  market: { x: -40, z: -40, label: 'Market' },
+  'shop-a': { x: 40, z: -84, label: 'Corner Shop' },
+  'shop-b': { x: -84, z: 40, label: 'Grocery' },
+  'shop-c': { x: 84, z: 84, label: 'Phone Shop' },
+  garage: { x: 84, z: -40, label: 'Garage' },
+  'boss-office': { x: -84, z: -84, label: "Boss Jalak's Office" },
+  harbor: { x: -60, z: 158, label: 'Harbor' },
+  hospital: { x: 0, z: 84, label: 'Hospital' },
+};
 
-  // Traffic on the roads.
-  for (let i = 0; i < TRAFFIC.count; i += 1) {
-    const horizontal = rng.next() < 0.5;
-    const road = rng.pick(ROADS);
-    const along = rng.range(-HALF + 20, HALF - 20);
-    const car = makeCar(`traffic-${i}`, 'traffic', horizontal ? along : road, horizontal ? road : along, 0, rng.pick(['#c0392b', '#2980b9', '#f1c40f', '#7f8c8d', '#8e44ad', '#16a085']));
-    car.axis = horizontal ? 'x' : 'z';
-    car.dir = rng.next() < 0.5 ? 1 : -1;
-    // Face along the direction of travel: +x is -PI/2, -x is PI/2, +z is PI, -z is 0.
-    car.heading = horizontal ? (car.dir > 0 ? -Math.PI / 2 : Math.PI / 2) : (car.dir > 0 ? Math.PI : 0);
-    car.speed = rng.range(TRAFFIC.minSpeed, TRAFFIC.maxSpeed);
-    state.cars.push(car);
+function makeFacadeTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 128, 256);
+  g.fillStyle = '#2c3e55';
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      g.fillRect(10 + col * 30, 14 + row * 30, 18, 16);
+    }
   }
-  // Parked cars, spot 0 is the red sedan.
-  city.parkedSpots.forEach((s, i) => {
-    const car = makeCar(`parked-${i}`, 'parked', s.x, s.z, s.heading, s.red ? '#d21f1f' : rng.pick(['#34495e', '#95a5a6', '#2c3e50', '#b7950b']));
-    car.red = s.red;
-    state.cars.push(car);
-  });
-  // Pedestrians on the sidewalks.
-  for (let i = 0; i < PEDS.count; i += 1) {
-    const road = rng.pick(ROADS);
-    const along = rng.range(-HALF + 15, HALF - 15);
-    state.peds.push({
-      id: `ped-${i}`,
-      x: rng.next() < 0.5 ? road + 8.5 : along,
-      z: rng.next() < 0.5 ? along : road + 8.5,
-      heading: rng.range(0, Math.PI * 2),
-      speed: rng.range(1.2, 2),
-      flee: 0,
-      down: false,
-      axis: rng.next() < 0.5 ? 'x' : 'z',
-      dir: rng.next() < 0.5 ? 1 : -1,
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function box(w, h, d, color, x, y, z) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshLambertMaterial({ color }),
+  );
+  mesh.position.set(x, y, z);
+  return mesh;
+}
+
+export function buildWorld(scene, seed) {
+  const rng = mulberry32(seed);
+  const colliders = [];
+  const lampLights = [];
+  const windowMats = [];
+  const trafficLoops = [];
+  const parkedSpots = [];
+  const pedSpots = [];
+
+  const facadeTex = makeFacadeTexture();
+
+  // --- Ground: grass base, city slab, sand beach, sea -------------------
+  const grass = new THREE.Mesh(
+    new THREE.PlaneGeometry(900, 900),
+    new THREE.MeshLambertMaterial({ color: COLORS.grass }),
+  );
+  grass.rotation.x = -Math.PI / 2;
+  grass.position.y = -0.05;
+  scene.add(grass);
+
+  const citySlab = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD.halfSize * 2, 300),
+    new THREE.MeshLambertMaterial({ color: COLORS.sidewalk }),
+  );
+  citySlab.rotation.x = -Math.PI / 2;
+  citySlab.position.set(0, 0, -20);
+  scene.add(citySlab);
+
+  const sand = new THREE.Mesh(
+    new THREE.PlaneGeometry(420, 22),
+    new THREE.MeshLambertMaterial({ color: COLORS.sand }),
+  );
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.set(0, 0.02, 159);
+  scene.add(sand);
+
+  const sea = new THREE.Mesh(
+    new THREE.PlaneGeometry(900, 260),
+    new THREE.MeshLambertMaterial({ color: COLORS.sea, transparent: true, opacity: 0.92 }),
+  );
+  sea.rotation.x = -Math.PI / 2;
+  sea.position.set(0, -0.4, 300);
+  scene.add(sea);
+
+  // --- Roads ------------------------------------------------------------
+  const roadMat = new THREE.MeshLambertMaterial({ color: COLORS.asphalt });
+  for (const line of ROAD_LINES) {
+    const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.roadWidth, 320), roadMat);
+    vRoad.rotation.x = -Math.PI / 2;
+    vRoad.position.set(line, 0.03, -20);
+    scene.add(vRoad);
+    const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(380, WORLD.roadWidth), roadMat);
+    hRoad.rotation.x = -Math.PI / 2;
+    hRoad.position.set(0, 0.03, line);
+    scene.add(hRoad);
+  }
+
+  // --- Buildings ----------------------------------------------------------
+  // Blocks sit between neighbouring road lines. One or two buildings per
+  // block, kept clear of the named mission places.
+  function nearPlace(x, z) {
+    for (const key of Object.keys(PLACES)) {
+      const p = PLACES[key];
+      if (Math.abs(p.x - x) < 16 && Math.abs(p.z - z) < 16) return true;
+    }
+    return false;
+  }
+
+  for (let i = 0; i < ROAD_LINES.length - 1; i += 1) {
+    for (let j = 0; j < ROAD_LINES.length - 1; j += 1) {
+      const x0 = ROAD_LINES[i] + WORLD.roadWidth / 2 + 3;
+      const x1 = ROAD_LINES[i + 1] - WORLD.roadWidth / 2 - 3;
+      const z0 = ROAD_LINES[j] + WORLD.roadWidth / 2 + 3;
+      const z1 = ROAD_LINES[j + 1] - WORLD.roadWidth / 2 - 3;
+      if (z0 > 140) continue; // beach side stays open
+      const cx = (x0 + x1) / 2;
+      const cz = (z0 + z1) / 2;
+      if (nearPlace(cx, cz)) continue;
+      const count = rng() < 0.55 ? 1 : 2;
+      for (let b = 0; b < count; b += 1) {
+        const w = range(rng, 12, Math.min(20, x1 - x0 - 2));
+        const d = range(rng, 12, Math.min(20, z1 - z0 - 2));
+        const h = range(rng, 8, 34);
+        const bx = count === 1 ? cx : x0 + w / 2 + (b * (x1 - x0 - w)) / 1;
+        const bz = count === 1 ? cz : z0 + d / 2 + (b * (z1 - z0 - d)) / 1;
+        if (nearPlace(bx, bz)) continue;
+        const color = pick(rng, BUILDING_COLORS);
+        const mat = new THREE.MeshLambertMaterial({ color, map: facadeTex, emissive: 0x222222 });
+        windowMats.push(mat);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        mesh.position.set(bx, h / 2, bz);
+        scene.add(mesh);
+        const roof = box(w + 0.6, 0.8, d + 0.6, 0x4a4a4a, bx, h + 0.4, bz);
+        scene.add(roof);
+        colliders.push({ minX: bx - w / 2, maxX: bx + w / 2, minZ: bz - d / 2, maxZ: bz + d / 2 });
+      }
+    }
+  }
+
+  // Boss Jalak's office: the tall dark tower on the north-west hill.
+  const towerMat = new THREE.MeshLambertMaterial({ color: 0x2e3440, map: facadeTex, emissive: 0x111111 });
+  windowMats.push(towerMat);
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(22, 52, 22), towerMat);
+  tower.position.set(-84, 26, -84);
+  scene.add(tower);
+  colliders.push({ minX: -95, maxX: -73, minZ: -95, maxZ: -73 });
+  const towerSign = box(24, 2, 1, 0xc23b2e, -84, 52, -72);
+  scene.add(towerSign);
+
+  // --- Pier ---------------------------------------------------------------
+  for (let z = 150; z <= 186; z += 3) {
+    const plank = box(8, 0.5, 2.8, 0x8a6b42, 4, 0.6, z);
+    scene.add(plank);
+  }
+  for (const px of [0.5, 7.5]) {
+    for (let z = 152; z <= 186; z += 8) {
+      scene.add(box(0.6, 2.2, 0.6, 0x6b4f30, px, -0.4, z));
+    }
+  }
+  // Small boats bobbing near the pier.
+  const boats = [];
+  for (let i = 0; i < 3; i += 1) {
+    const boat = box(3, 1, 7, pick(rng, [0xe8e8e8, 0x2e6fc2, 0xc23b2e]), -14 - i * 12, 0.1, 178 + i * 6);
+    scene.add(boat);
+    boats.push(boat);
+  }
+
+  // --- Palms along the beach ----------------------------------------------
+  for (let x = -170; x <= 170; x += 14) {
+    if (Math.abs(x - 4) < 10) continue;
+    const px = x + range(rng, -3, 3);
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.5, 7, 6),
+      new THREE.MeshLambertMaterial({ color: 0x7a5a34 }),
+    );
+    trunk.position.set(px, 3.5, 152 + range(rng, -2, 4));
+    trunk.rotation.z = range(rng, -0.12, 0.12);
+    scene.add(trunk);
+    const top = new THREE.Mesh(
+      new THREE.ConeGeometry(3.2, 4.5, 7),
+      new THREE.MeshLambertMaterial({ color: 0x2e7d32 }),
+    );
+    top.position.set(px, 8.4, trunk.position.z);
+    scene.add(top);
+  }
+
+  // --- Streetlights ---------------------------------------------------------
+  const lampMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
+  for (const line of ROAD_LINES) {
+    for (let t = -150; t <= 140; t += 36) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6, 6), lampMat);
+      pole.position.set(line + 6, 3, t);
+      scene.add(pole);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), bulbMat.clone());
+      bulb.position.set(line + 6, 6.1, t);
+      scene.add(bulb);
+      lampLights.push(bulb.material);
+    }
+  }
+
+  // --- Market stalls ---------------------------------------------------------
+  for (let i = 0; i < 4; i += 1) {
+    const sx = -52 + i * 8;
+    const stall = box(6, 2.4, 4, pick(rng, [0xc23b2e, 0xe0a52e, 0x3fae6a, 0x2e6fc2]), sx, 1.2, -40);
+    scene.add(stall);
+    const awning = box(6.6, 0.3, 4.6, 0xf5f0e0, sx, 2.8, -40);
+    scene.add(awning);
+    colliders.push({ minX: sx - 3, maxX: sx + 3, minZ: -42, maxZ: -38 });
+  }
+
+  // --- Traffic loops (rectangular circuits on the road grid) ------------------
+  trafficLoops.push([
+    { x: -132, z: -88 }, { x: 132, z: -88 }, { x: 132, z: 88 }, { x: -132, z: 88 },
+  ]);
+  trafficLoops.push([
+    { x: -88, z: -132 }, { x: -88, z: 132 }, { x: 88, z: 132 }, { x: 88, z: -132 },
+  ]);
+  trafficLoops.push([
+    { x: -44, z: -44 }, { x: 44, z: -44 }, { x: 44, z: 44 }, { x: -44, z: 44 },
+  ]);
+
+  // Parked cars along the roads.
+  for (let i = 0; i < 10; i += 1) {
+    parkedSpots.push({
+      x: pick(rng, ROAD_LINES) + 7,
+      z: range(rng, -120, 130),
+      color: pick(rng, CAR_COLORS),
+      angle: rng() < 0.5 ? 0 : Math.PI / 2,
     });
   }
-  startMission(state, 0);
-  return state;
+  // Pedestrian wander spots on sidewalks.
+  for (let i = 0; i < 14; i += 1) {
+    pedSpots.push({
+      x: pick(rng, ROAD_LINES) + range(rng, -8, 8),
+      z: range(rng, -130, 140),
+    });
+  }
+
+  return {
+    colliders,
+    lampLights,
+    windowMats,
+    trafficLoops,
+    parkedSpots,
+    pedSpots,
+    boats,
+    sea,
+    setNight(factor) {
+      for (const m of lampLights) m.color.setScalar(0.35 + factor * 0.65);
+      for (const m of windowMats) m.emissive.setScalar(0.03 + factor * 0.22);
+    },
+  };
 }
 
-function insideBuilding(state, x, z, pad) {
-  for (const b of state.city.buildings) {
-    if (Math.abs(x - b.x) < b.w / 2 + pad && Math.abs(z - b.z) < b.d / 2 + pad) return true;
+// Build a low-poly car mesh. `isPolice` adds a light bar.
+export function makeCarMesh(color, isPolice) {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.7, 4.4), bodyMat);
+  body.position.y = 0.55;
+  group.add(body);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(1.7, 0.65, 2.2),
+    new THREE.MeshLambertMaterial({ color: 0x1a2733 }),
+  );
+  cabin.position.set(0, 1.2, -0.2);
+  group.add(cabin);
+  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10);
+  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x141414 });
+  for (const [wx, wz] of [[-0.95, 1.5], [0.95, 1.5], [-0.95, -1.5], [0.95, -1.5]]) {
+    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(wx, 0.42, wz);
+    group.add(wheel);
   }
-  return false;
+  if (isPolice) {
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 0.25, 0.4),
+      new THREE.MeshBasicMaterial({ color: 0xff2222 }),
+    );
+    bar.position.set(0, 1.65, -0.2);
+    bar.name = 'lightbar';
+    group.add(bar);
+    const white = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 0.5, 4.0),
+      new THREE.MeshLambertMaterial({ color: 0xf2f2f2 }),
+    );
+    white.position.y = 0.62;
+    white.scale.set(1, 1, 1);
+    group.add(white);
+  }
+  return group;
 }
 
-function moveWithCollision(state, obj, nx, nz, pad) {
-  // Slide along walls: try x, then z.
-  if (!insideBuilding(state, nx, obj.z, pad) && Math.abs(nx) < HALF + 40 && nz > -HALF - 10 && nz < HALF + 10) obj.x = nx;
-  if (!insideBuilding(state, obj.x, nz, pad) && Math.abs(nz) < HALF + 10) obj.z = nz;
-  obj.x = clamp(obj.x, -HALF - 8, WORLD_EAST - 10);
-  obj.z = clamp(obj.z, -HALF - 8, HALF + 8);
+// Build a simple low-poly person: body, head, legs.
+export function makePersonMesh(shirtColor, skinColor) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.9, 0.4),
+    new THREE.MeshLambertMaterial({ color: shirtColor }),
+  );
+  body.position.y = 1.05;
+  group.add(body);
+  const head = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.45, 0.45),
+    new THREE.MeshLambertMaterial({ color: skinColor || 0xd9a066 }),
+  );
+  head.position.y = 1.75;
+  group.add(head);
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x2b3a4a });
+  for (const lx of [-0.18, 0.18]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.6, 0.3), legMat);
+    leg.position.set(lx, 0.3, 0);
+    group.add(leg);
+  }
+  const armMat = new THREE.MeshLambertMaterial({ color: shirtColor });
+  for (const ax of [-0.48, 0.48]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.75, 0.25), armMat);
+    arm.position.set(ax, 1.05, 0);
+    arm.name = ax < 0 ? 'armL' : 'armR';
+    group.add(arm);
+  }
+  return group;
 }
 
-function raiseWanted(state, n) {
-  state.wanted = Math.min(WANTED.max, state.wanted + n);
-  state.lastRaise = state.time;
-  state.decayTimer = 0;
+export function randomCarColor(rng) {
+  return pick(rng, CAR_COLORS);
 }
 
-function hurtPlayer(state, amount) {
-  state.player.lastDamage = state.time;
-  state.health = Math.max(0, state.health - amount);
-  state.events.push({ type: 'hurt', amount });
-  if (state.health <= 0) bustPlayer(state, 'down');
-}
-
-function bustPlayer(state, reason) {
-  const fine = Math.floor(state.money * WANTED.fine);
-  state.money -= fine;
-  const p = state.player;
-  if (p.car) {
-    p.car.parked = true;
-    p.car.speed = 0;
-    p.car = null;
-  }
-  p.onFoot = true;
-  p.x = LANDMARKS.hospital.x;
-  p.z = LANDMARKS.hospital.z;
-  p.heading = 0;
-  p.speed = 0;
-  p.bustHold = 0;
-  state.health = PLAYER.maxHealth;
-  state.wanted = 0;
-  state.police = [];
-  state.events.push({ type: 'busted', reason, fine });
-  if (currentMission(state)?.id === 'razia') failMission(state, 'busted');
-}
-
-function enterCar(state, car) {
-  const p = state.player;
-  p.onFoot = false;
-  p.car = car;
-  car.parked = false;
-  car.speed = 0;
-  car.heading = p.heading;
-  if (car.kind !== 'police') {
-    raiseWanted(state, WANTED.steal);
-    state.events.push({ type: 'stolen', car: car.id });
-  }
-}
-
-function exitCar(state) {
-  const p = state.player;
-  const car = p.car;
-  if (!car) return;
-  car.speed = 0;
-  car.parked = true;
-  const sx = car.x + Math.cos(car.heading + Math.PI / 2) * 2.5;
-  const sz = car.z + Math.sin(car.heading + Math.PI / 2) * 2.5;
-  p.x = sx;
-  p.z = sz;
-  p.heading = car.heading;
-  p.onFoot = true;
-  p.car = null;
-}
-
-function stepPlayer(state, input, dt) {
-  const p = state.player;
-  p.punchCooldown = Math.max(0, p.punchCooldown - dt);
-
-  if (input.enter) {
-    if (p.onFoot) {
-      let best = null;
-      let bestD = 3.5;
-      for (const c of state.cars) {
-        if (c.kind === 'police') continue;
-        const d = dist2(p, c);
-        if (d < bestD) {
-          bestD = d;
-          best = c;
-        }
-      }
-      if (best) enterCar(state, best);
-    } else {
-      exitCar(state);
-    }
-  }
-
-  if (p.onFoot) {
-    const speed = input.run ? PLAYER.runSpeed : PLAYER.walkSpeed;
-    let mx = 0;
-    let mz = 0;
-    // Camera-relative movement; cameraYaw 0 faces -z (north).
-    const yaw = input.cameraYaw ?? 0;
-    const fwdX = -Math.sin(yaw);
-    const fwdZ = -Math.cos(yaw);
-    const rightX = Math.cos(yaw);
-    const rightZ = -Math.sin(yaw);
-    if (input.forward) {
-      mx += fwdX;
-      mz += fwdZ;
-    }
-    if (input.back) {
-      mx -= fwdX;
-      mz -= fwdZ;
-    }
-    if (input.right) {
-      mx += rightX;
-      mz += rightZ;
-    }
-    if (input.left) {
-      mx -= rightX;
-      mz -= rightZ;
-    }
-    const len = Math.hypot(mx, mz);
-    if (len > 0) {
-      const nx = p.x + (mx / len) * speed * dt;
-      const nz = p.z + (mz / len) * speed * dt;
-      const targetHeading = Math.atan2(-(mx / len), -(mz / len));
-      p.heading += angleDiff(targetHeading, p.heading) * Math.min(1, dt * 12);
-      moveWithCollision(state, p, nx, nz, PLAYER.radius);
-      p.speed = speed;
-    } else {
-      p.speed = 0;
-    }
-    if (input.punch && p.punchCooldown <= 0) {
-      p.punchCooldown = PLAYER.punchCooldown;
-      state.events.push({ type: 'punch' });
-      for (const g of state.gang) {
-        if (g.defeated) continue;
-        const d = dist2(p, g);
-        if (d < PLAYER.punchRange && Math.abs(angleDiff(angleTo(p, g), p.heading)) < PLAYER.punchArc) {
-          g.health -= 1;
-          if (g.health <= 0) {
-            g.defeated = true;
-            state.events.push({ type: 'gangDown', gang: g.id });
-          }
-        }
-      }
-    }
-    return;
-  }
-
-  // Driving.
-  const car = p.car;
-  if (!car) {
-    p.onFoot = true;
-    return;
-  }
-  if (input.forward) car.speed = Math.min(CAR.maxSpeed, car.speed + CAR.accel * dt);
-  else if (input.back) {
-    car.speed = car.speed > 0.5 ? Math.max(0, car.speed - CAR.brake * dt) : Math.max(-CAR.reverseSpeed, car.speed - CAR.accel * 0.6 * dt);
-  } else if (input.handbrake) {
-    car.speed = Math.max(0, car.speed - CAR.brake * 1.4 * dt);
-  } else {
-    car.speed = Math.max(0, car.speed - 4 * dt);
-  }
-  const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-  const speedFactor = clamp(Math.abs(car.speed) / CAR.maxSpeed, 0, 1);
-  car.heading += steer * CAR.steerRate * speedFactor * dt * (car.speed >= 0 ? 1 : -1);
-  // Forward is (-sin h, -cos h).
-  const fx = -Math.sin(car.heading);
-  const fz = -Math.cos(car.heading);
-  const nextX = car.x + fx * car.speed * dt;
-  const nextZ = car.z + fz * car.speed * dt;
-  moveWithCollision(state, car, nextX, nextZ, 1.4);
-  p.x = car.x;
-  p.z = car.z;
-  p.heading = car.heading;
-  p.speed = Math.abs(car.speed);
-
-  // Running over a pedestrian while driving fast.
-  for (const ped of state.peds) {
-    if (ped.down) continue;
-    if (dist2(car, ped) < 1.7 && Math.abs(car.speed) > 3) {
-      ped.down = true;
-      state.pedRespawn = 12;
-      raiseWanted(state, WANTED.hitPed);
-      state.events.push({ type: 'hitPed', ped: ped.id });
-      state.events.push({ type: 'crash' });
-    }
-  }
-}
-
-function stepTraffic(state, dt) {
-  for (const car of state.cars) {
-    if (car.kind !== 'traffic') continue;
-    // At an intersection, sometimes turn onto the cross road.
-    const along = car.axis === 'x' ? car.x : car.z;
-    const cross = nearestRoad(along);
-    if (Math.abs(along - cross) < 1.2 && state.rng.next() < 0.004) {
-      car.axis = car.axis === 'x' ? 'z' : 'x';
-      if (car.axis === 'x') {
-        car.z = cross;
-        car.heading = car.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
-      } else {
-        car.x = cross;
-        car.heading = car.dir > 0 ? Math.PI : 0;
-      }
-    }
-    const step = car.speed * car.dir * dt;
-    if (car.axis === 'x') car.x += step;
-    else car.z += step;
-    const pos = car.axis === 'x' ? car.x : car.z;
-    if (pos > HALF + 6) {
-      if (car.axis === 'x') car.x = -HALF - 6;
-      else car.z = -HALF - 6;
-    } else if (pos < -HALF - 6) {
-      if (car.axis === 'x') car.x = HALF + 6;
-      else car.z = HALF + 6;
-    }
-    // Bumping the player on foot hurts.
-    const p = state.player;
-    if (p.onFoot && dist2(car, p) < 2 && !p.car) {
-      hurtPlayer(state, 10);
-      p.x += (p.x - car.x) * 0.5;
-      p.z += (p.z - car.z) * 0.5;
-    }
-  }
-}
-
-function stepPeds(state, dt) {
-  for (const ped of state.peds) {
-    if (ped.down) continue;
-    // Flee a fast car nearby.
-    let threat = null;
-    let threatD = 9;
-    for (const car of state.cars) {
-      if (car.kind === 'parked' || Math.abs(car.speed) < 8) continue;
-      const d = dist2(car, ped);
-      if (d < threatD) {
-        threatD = d;
-        threat = car;
-      }
-    }
-    const pc = state.player.car;
-    if (pc && Math.abs(pc.speed) > 8) {
-      const d = dist2(pc, ped);
-      if (d < threatD) {
-        threatD = d;
-        threat = pc;
-      }
-    }
-    if (threat) {
-      ped.flee = 2;
-      ped.heading = Math.atan2(ped.x - threat.x, -(ped.z - threat.z));
-    } else if (ped.flee > 0) {
-      ped.flee -= dt;
-    }
-    const speed = ped.flee > 0 ? PEDS.fleeSpeed : ped.speed;
-    const nx = ped.x + -Math.sin(ped.heading) * speed * dt;
-    const nz = ped.z + -Math.cos(ped.heading) * speed * dt;
-    if (Math.abs(nx) > HALF || Math.abs(nz) > HALF) {
-      ped.heading += Math.PI / 2;
-    } else {
-      ped.x = nx;
-      ped.z = nz;
-    }
-    // Wander: occasionally change direction on the sidewalk grid.
-    if (state.rng.next() < 0.001) ped.heading = state.rng.range(0, Math.PI * 2);
-  }
-  if (state.pedRespawn > 0) {
-    state.pedRespawn -= dt;
-    if (state.pedRespawn <= 0) {
-      const down = state.peds.find((p) => p.down);
-      if (down) {
-        const road = state.rng.pick(ROADS);
-        down.x = road + 8.5;
-        down.z = state.rng.range(-HALF + 15, HALF - 15);
-        down.down = false;
-      }
-    }
-  }
-}
-
-function stepPolice(state, dt) {
-  const p = state.player;
-  const want = Math.min(state.wanted, 3);
-  state.policeSpawn -= dt;
-  if (state.police.length < want && state.policeSpawn <= 0) {
-    state.policeSpawn = 3;
-    const road = state.rng.pick(ROADS);
-    const angle = state.rng.range(0, Math.PI * 2);
-    const car = makeCar(`police-${state.time.toFixed(0)}-${state.police.length}`, 'police', p.x + Math.cos(angle) * 70, p.z + Math.sin(angle) * 70, 0, '#f4f6f7');
-    car.x = clamp(car.x, -HALF, HALF);
-    car.z = clamp(car.z, -HALF, HALF);
-    car.speed = 10;
-    state.cars.push(car);
-    state.police.push(car);
-  }
-  if (state.wanted === 0) {
-    // Drive off: remove police far away.
-    state.police = state.police.filter((c) => dist2(c, p) < 130);
-    state.cars = state.cars.filter((c) => c.kind !== 'police' || dist2(c, p) < 130);
-  }
-  for (const car of state.police) {
-    const target = angleTo(car, p);
-    car.heading += angleDiff(target, car.heading) * Math.min(1, dt * 2.2);
-    const maxSpeed = 17 + state.wanted * 1.5;
-    const d = dist2(car, p);
-    car.speed = d > 4 ? Math.min(maxSpeed, car.speed + 8 * dt) : Math.max(0, car.speed - 10 * dt);
-    const nx = car.x + -Math.sin(car.heading) * car.speed * dt;
-    const nz = car.z + -Math.cos(car.heading) * car.speed * dt;
-    if (!insideBuilding(state, nx, nz, 1.4)) {
-      car.x = nx;
-      car.z = nz;
-    }
-    if (p.onFoot && d < 2.6 && car.speed < 2.5) {
-      p.bustHold += dt;
-      if (p.bustHold >= WANTED.bustHold) {
-        bustPlayer(state, 'busted');
-        return;
-      }
-    } else {
-      p.bustHold = Math.max(0, p.bustHold - dt);
-    }
-    // Ramming the player's car.
-    if (!p.onFoot && p.car && d < 3.2 && car.speed > 4) {
-      p.car.speed *= 0.55;
-      car.speed *= 0.6;
-      state.events.push({ type: 'crash' });
-    }
-  }
-}
-
-function stepGang(state, dt) {
-  const p = state.player;
-  for (const g of state.gang) {
-    if (g.defeated) continue;
-    g.attackCooldown = Math.max(0, g.attackCooldown - dt);
-    const d = dist2(g, p);
-    if (d < 25) {
-      g.heading = angleTo(g, p);
-      if (d > GANG.range) {
-        g.x += -Math.sin(g.heading) * GANG.speed * dt;
-        g.z += -Math.cos(g.heading) * GANG.speed * dt;
-      } else if (g.attackCooldown <= 0 && p.onFoot) {
-        g.attackCooldown = GANG.cooldown;
-        hurtPlayer(state, GANG.damage);
-      }
-    }
-  }
-}
-
-export function stepWorld(state, input, dt = STEP) {
-  state.events = [];
-  state.time += dt;
-  state.clock = (state.clock + CLOCK_RATE * dt) % 86400;
-
-  stepPlayer(state, input, dt);
-  stepTraffic(state, dt);
-  stepPeds(state, dt);
-  stepPolice(state, dt);
-  stepGang(state, dt);
-
-  // Cash pickups.
-  const p = state.player;
-  for (const pk of state.pickups) {
-    if (!pk.taken && dist2(p, pk) < 1.8) {
-      pk.taken = true;
-      state.money += PICKUP_VALUE;
-      state.events.push({ type: 'pickup', value: PICKUP_VALUE });
-    }
-  }
-
-  // Wanted cools down when quiet and unseen.
-  if (state.wanted > 0 && state.time - state.lastRaise > WANTED.quietAfter) {
-    const nearPolice = state.police.some((c) => dist2(c, p) < WANTED.unseenRange);
-    if (!nearPolice) {
-      state.decayTimer += dt;
-      if (state.decayTimer >= WANTED.decayEvery) {
-        state.decayTimer = 0;
-        state.wanted = Math.max(0, state.wanted - 1);
-        state.events.push({ type: 'wantedDown', wanted: state.wanted });
-      }
-    }
-  }
-
-  // Health regenerates out of trouble.
-  if (state.time - p.lastDamage > PLAYER.regenDelay && state.health > 0 && state.health < PLAYER.maxHealth) {
-    state.health = Math.min(PLAYER.maxHealth, state.health + PLAYER.regenRate * dt);
-  }
-
-  updateMissions(state, dt);
-  return state.events;
-}
-
-export { completeMission, failMission, startMission };
+export { intRange };

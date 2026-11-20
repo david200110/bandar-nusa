@@ -1,100 +1,103 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bandar Nusa — Kisah Raka</title>
+<title>Bandar Nusa — Open World Crime Game</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ffd23e'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' font-family='sans-serif' font-weight='bold' fill='%231a1405'%3EB%3C/text%3E%3C/svg%3E">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1b2e; font-family: 'Segoe UI', system-ui, sans-serif; color: #fff; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1026; font-family: 'Segoe UI', Arial, sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; display: none; }
+  #hud.on { display: block; }
+  .panel { background: rgba(10, 14, 22, 0.72); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 10px 14px; }
+  #stats { position: absolute; top: 14px; right: 14px; text-align: right; min-width: 210px; }
+  #stats .money { font-size: 22px; font-weight: bold; color: #7ddf8a; }
+  #stats .debt { font-size: 14px; color: #ff9a8a; }
+  #stars { font-size: 26px; letter-spacing: 4px; margin-top: 4px; }
+  #mission { position: absolute; top: 14px; left: 14px; max-width: 380px; }
+  #mission-title { font-size: 16px; font-weight: bold; color: #ffd23e; }
+  #objective { font-size: 14px; margin-top: 4px; line-height: 1.4; }
+  #health { position: absolute; left: 14px; bottom: 14px; width: 220px; }
+  #health .label { font-size: 12px; letter-spacing: 1px; margin-bottom: 5px; }
+  #health-bar-outer { height: 12px; background: rgba(255,255,255,0.2); border-radius: 6px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: #58c96b; border-radius: 6px; }
+  #clock { position: absolute; bottom: 14px; left: 250px; font-size: 14px; }
+  #speed { position: absolute; bottom: 52px; right: 16px; font-size: 26px; font-weight: bold; text-shadow: 0 2px 6px #000; }
+  #minimap { position: absolute; right: 14px; bottom: 14px; width: 170px; height: 170px; border: 2px solid rgba(255,255,255,0.35); border-radius: 8px; background: #20262b; }
+  #toast { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%); background: rgba(10,14,22,0.85); border: 1px solid #ffd23e; color: #ffe9a8; padding: 10px 18px; border-radius: 8px; font-size: 15px; max-width: 640px; text-align: center; opacity: 0; transition: opacity 0.4s; }
+  #controls-hint { position: absolute; right: 14px; top: 190px; font-size: 12px; line-height: 1.7; color: #dfe6ec; text-align: right; }
+  .screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; color: #fff; background: linear-gradient(160deg, rgba(8,12,26,0.88), rgba(20,40,60,0.82)); z-index: 10; padding: 20px; }
+  .screen h1 { font-size: 52px; margin: 0 0 6px; letter-spacing: 2px; color: #ffd23e; text-shadow: 0 4px 18px rgba(0,0,0,0.7); }
+  .screen h2 { font-size: 20px; font-weight: normal; color: #bcd6ea; margin: 0 0 18px; }
+  .screen p { max-width: 620px; line-height: 1.6; font-size: 15px; color: #e8eef4; }
+  .screen .keys { font-size: 14px; line-height: 2; background: rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 22px; margin: 10px 0 18px; }
+  .btn { pointer-events: auto; cursor: pointer; background: #ffd23e; color: #1a1405; border: none; font-size: 18px; font-weight: bold; padding: 13px 34px; border-radius: 10px; margin: 6px; }
+  .btn:hover { background: #ffe06a; }
+  .btn.secondary { background: #2e6fc2; color: #fff; }
+  .btn.secondary:hover { background: #3f8cff; }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .hud { position: fixed; z-index: 5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
-  #hud-top-left { top: 14px; left: 16px; }
-  #money { font-size: 26px; font-weight: 800; color: #7dff9b; }
-  #debt { font-size: 13px; color: #ffb3b3; margin-top: 2px; }
-  #health-row { margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
-  #health-bar { width: 150px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid #fff3; border-radius: 6px; overflow: hidden; }
-  #health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #2ecc71, #7dff9b); }
-  #stars { font-size: 24px; letter-spacing: 2px; color: #ffd23f; margin-top: 4px; }
-  #stars.hot { animation: blink 0.7s infinite alternate; }
-  @keyframes blink { from { opacity: 1; } to { opacity: 0.45; } }
-  #hud-top-right { top: 14px; right: 16px; text-align: right; }
-  #clock { font-size: 24px; font-weight: 700; }
-  #minimap { width: 170px; height: 170px; margin-top: 8px; border: 2px solid rgba(255,255,255,.5); border-radius: 8px; background: #1d2b1f; }
-  #hud-bottom { left: 50%; bottom: 18px; transform: translateX(-50%); text-align: center; width: 90%; }
-  #objective { font-size: 17px; font-weight: 700; }
-  #distance { font-size: 14px; color: #ffd23f; margin-top: 2px; }
-  #prompt { font-size: 13px; color: #dfe9ff; margin-top: 6px; }
-  #hud-speed { right: 16px; bottom: 18px; text-align: right; }
-  #speed { font-size: 30px; font-weight: 800; }
-  #toast { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 6; background: rgba(0,0,0,.75); border: 1px solid #ffd23f; color: #ffe9a8; padding: 10px 22px; border-radius: 10px; font-size: 17px; font-weight: 700; opacity: 0; transition: opacity .3s; pointer-events: none; text-align: center; max-width: 80%; }
-  #toast.show { opacity: 1; }
-  .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: linear-gradient(180deg, rgba(6,20,38,.82), rgba(6,20,38,.68)); padding: 20px; }
-  .screen h1 { font-size: 52px; margin: 0 0 6px; letter-spacing: 1px; }
-  .screen h2 { font-size: 34px; margin: 0 0 10px; }
-  .screen p { max-width: 620px; font-size: 16px; line-height: 1.55; color: #dfe9ff; }
-  .screen button { pointer-events: auto; margin: 8px 6px 0; padding: 13px 34px; font-size: 18px; font-weight: 700; border: none; border-radius: 10px; background: #f2a541; color: #231303; cursor: pointer; }
-  .screen button:hover { background: #ffc65c; }
-  .screen button.secondary { background: #2e7f7a; color: #fff; }
-  .hidden { display: none !important; }
-  .keys { font-size: 13px; color: #b9c8e2; margin-top: 14px; line-height: 1.7; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Bandar Nusa: game open-world 3D, Raka melunasi utang ke Bos Jalak"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
+<canvas id="game" aria-label="Bandar Nusa: an open-world crime game. Drive, fight and repay a debt to Boss Jalak."></canvas>
 
-<div class="hud" id="hud-top-left">
-  <div id="money">Rp 0</div>
-  <div id="debt">Utang: Rp 1.400.000</div>
-  <div id="health-row"><span>❤ <span id="health-text">100</span></span><div id="health-bar"><div id="health-fill"></div></div></div>
-  <div id="stars">☆☆☆☆☆</div>
-</div>
-<div class="hud" id="hud-top-right">
-  <div id="clock">08:00</div>
+<div id="hud">
+  <div id="mission" class="panel">
+    <div id="mission-title">Mission 1/5 — First Errand</div>
+    <div id="objective">Pick up the package at the pier</div>
+  </div>
+  <div id="stats" class="panel">
+    <div class="money" id="money">Rp 0</div>
+    <div class="debt">Debt left: <span id="debt">Rp 1.400.000</span></div>
+    <div id="stars">☆☆☆☆☆</div>
+  </div>
+  <div id="health" class="panel">
+    <div class="label">HEALTH</div>
+    <div id="health-bar-outer"><div id="health-fill"></div></div>
+  </div>
+  <div id="clock" class="panel">07:40 — Day</div>
+  <div id="speed"></div>
   <canvas id="minimap" width="170" height="170"></canvas>
+  <div id="controls-hint">WASD move / drive &nbsp;·&nbsp; Shift run<br>E enter or exit car &nbsp;·&nbsp; F punch<br>Drag mouse to look &nbsp;·&nbsp; M music<br>P save game</div>
+  <div id="toast"></div>
 </div>
-<div class="hud" id="hud-bottom">
-  <div id="objective">Misi 1 — Paket Pertama</div>
-  <div id="distance"></div>
-  <div id="prompt">WASD jalan · Shift lari · E naik mobil</div>
-</div>
-<div class="hud" id="hud-speed"><div id="speed">—</div></div>
-<div id="toast"></div>
 
-<div class="screen" id="screen-title">
+<div id="screen-start" class="screen">
   <h1>BANDAR NUSA</h1>
-  <h2>Kisah Raka</h2>
-  <p>Raka, kurir muda di kota pesisir Bandar Nusa, berutang <b>Rp 1.400.000</b> kepada Bos Jalak, bos pelabuhan yang menagih dengan rasa takut. Lima pekerjaan akan melunasi utang itu, satu demi satu — kalau polisi tidak menangkapmu lebih dulu.</p>
-  <div>
-    <button id="btn-start">Mulai Bermain</button>
-    <button id="btn-continue" class="secondary hidden">Lanjutkan</button>
+  <h2>An open-world crime story — repay the debt, or the city owns you.</h2>
+  <p>You are <b>Raka</b>. You owe <b>Boss Jalak</b> Rp 1,400,000, and he does not wait.
+  Run his five jobs across the city — the pier, the shops, a stolen car, the harbor thugs —
+  and pay every rupiah back. Watch the stars: the police are always watching you.</p>
+  <div class="keys">
+    WASD — move / drive &nbsp;·&nbsp; Shift — run<br>
+    E — enter or exit a car &nbsp;·&nbsp; F — punch<br>
+    Drag mouse — look around &nbsp;·&nbsp; M — music on/off &nbsp;·&nbsp; P — save
   </div>
-  <div class="keys">WASD / panah — jalan &amp; mengemudi · Shift — lari · E — naik/turun mobil · F / klik — pukul · Spasi — rem tangan · Seret mouse — putar kamera · Esc — jeda · M — suara</div>
-</div>
-
-<div class="screen hidden" id="screen-pause">
-  <h2>Jeda</h2>
-  <p>Progresmu tersimpan otomatis. Tarik napas dulu, Raka.</p>
   <div>
-    <button id="btn-resume">Lanjutkan</button>
-    <button id="btn-restart" class="secondary">Mulai dari Awal</button>
+    <button class="btn" id="btn-start">Start New Game</button>
+    <button class="btn secondary" id="btn-continue" style="display:none">Continue Saved Game</button>
   </div>
+  <p style="font-size:13px;color:#9fb2c3">An original game. No content from any other game series. Music is synthesized live in your browser.</p>
 </div>
 
-<div class="screen hidden" id="screen-busted">
-  <h2>TERTANGKAP!</h2>
-  <p id="busted-fine">Polisi menahanmu.</p>
-  <div><button id="btn-busted-ok">Bangun di Rumah Sakit</button></div>
+<div id="screen-busted" class="screen">
+  <h1>BUSTED!</h1>
+  <p id="busted-fine">The police caught you.</p>
+  <p>You woke up at the hospital. The wanted stars are gone — but the fine is not.</p>
+  <button class="btn" id="btn-busted">Keep Playing</button>
 </div>
 
-<div class="screen hidden" id="screen-complete">
-  <h2>UTANG LUNAS!</h2>
-  <p id="complete-money">Raka akhirnya bebas dari Bos Jalak.</p>
-  <p>Bandar Nusa tetap terbuka — kelilingi kotanya sesukamu.</p>
-  <div><button id="btn-roam">Jelajahi Kota</button></div>
+<div id="screen-win" class="screen">
+  <h1>DEBT PAID!</h1>
+  <h2>Raka is free. Bandar Nusa is yours.</h2>
+  <p id="win-stats"></p>
+  <p>Boss Jalak nods once and walks away. The city lights come on, the sea keeps rolling,
+  and for the first time in years, nobody owns you.</p>
+  <button class="btn" id="btn-again">Play Again</button>
 </div>
 
+<p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
